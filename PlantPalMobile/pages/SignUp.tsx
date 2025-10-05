@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { RootStackParamList } from "../App";
 
 type SignUpScreenNavigationProp = StackNavigationProp<
@@ -37,41 +38,70 @@ export default function SignUp() {
 
   if (!fontsLoaded) return null;
 
-  const handleSignUp = () => {
-    if (!email || !password || !confirmPassword) {
-      alert("Please fill all fields");
-      return;
-    }
-    if (password !== confirmPassword) {
-      alert("Passwords do not match");
-      return;
-    }
-    alert("Signed Up!");
-  };
+  const handleSignUp = async () => {
+  if (!email || !password || !confirmPassword) {
+    alert("Please fill all fields");
+    return;
+  }
 
-  // Password requirement checks
+  if (password !== confirmPassword) {
+    alert("Passwords do not match");
+    return;
+  }
+
+  // Optional password strength check
   const hasMinLength = password.length >= 8;
   const hasNumber = /\d/.test(password);
   const hasUppercase = /[A-Z]/.test(password);
   const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+  if (!hasMinLength || !hasNumber || !hasUppercase || !hasSpecialChar) {
+    alert("Password is too weak");
+    return;
+  }
 
-  // Strength level
+  try {
+    const res = await fetch("http://127.0.0.1:8000/api/signup/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.error || "Signup failed");
+      return;
+    }
+
+    // ✅ Store user info in AsyncStorage
+    await AsyncStorage.setItem("userEmail", data.user.email);
+    await AsyncStorage.setItem("username", data.user.username);
+
+    // ✅ Friendly success message
+    alert(`Signed up successfully!\n\nWelcome ${data.user.username} 🌱`);
+
+    navigation.navigate("Login");
+  } catch (err) {
+    console.error(err);
+    alert("Network error. Please try again.");
+  }
+};
+
+
+  // Password strength indicator
   const strengthCount =
-    (hasMinLength ? 1 : 0) +
-    (hasNumber ? 1 : 0) +
-    (hasUppercase ? 1 : 0) +
-    (hasSpecialChar ? 1 : 0);
+    (password.length >= 8 ? 1 : 0) +
+    (/\d/.test(password) ? 1 : 0) +
+    (/[A-Z]/.test(password) ? 1 : 0) +
+    (/[!@#$%^&*(),.?":{}|<>]/.test(password) ? 1 : 0);
 
-  // Missing requirement message
   let passwordHint = "";
-  let passwordHintColor = "#D9534F"; // muted red by default
-  if (!hasMinLength) passwordHint = "Password must be at least 8 characters";
-  else if (!hasNumber) passwordHint = "Add a number to strengthen your password";
-  else if (!hasUppercase)
-    passwordHint = "Add an uppercase letter to strengthen your password";
-  else if (!hasSpecialChar)
-    passwordHint = "Add a special character to strengthen your password";
-  else passwordHint = "Strong password ✔";
+  if (strengthCount < 4) {
+    if (password.length < 8) passwordHint = "At least 8 characters required";
+    else if (!/\d/.test(password)) passwordHint = "Add a number";
+    else if (!/[A-Z]/.test(password)) passwordHint = "Add an uppercase letter";
+    else if (!/[!@#$%^&*(),.?\":{}|<>]/.test(password)) passwordHint = "Add a special character";
+  } else passwordHint = "Strong password ✔";
 
   return (
     <ImageBackground
@@ -80,19 +110,16 @@ export default function SignUp() {
       resizeMode="cover"
     >
       <View style={styles.container}>
-        {/* Logo above title */}
         <Image
           source={require("../assets/plantpal-logo.png")}
           style={styles.logo}
         />
-
-        {/* Title */}
         <Text style={styles.title}>Sign Up</Text>
         <Text style={styles.subtitle}>
           Create your PlantPal+ account and stay{"\n"}rooted in wellness.
         </Text>
 
-        {/* Email Input */}
+        {/* Email */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
@@ -106,7 +133,7 @@ export default function SignUp() {
           </View>
         </View>
 
-        {/* Password Input */}
+        {/* Password */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
@@ -127,30 +154,26 @@ export default function SignUp() {
           </TouchableOpacity>
         </View>
 
-        {/* Password Strength Lines */}
+        {/* Strength bar */}
         <View style={styles.strengthContainer}>
           {[...Array(4)].map((_, i) => (
             <View
               key={i}
               style={[
                 styles.strengthBar,
-                {
-                  backgroundColor: i < strengthCount ? "#3B6E3B" : "#ccc",
-                },
+                { backgroundColor: i < strengthCount ? "#3B6E3B" : "#ccc" },
               ]}
             />
           ))}
         </View>
 
-        {/* Password Hint */}
         {password.length > 0 && (
-          <Text style={[styles.passwordHint, { color: passwordHintColor }]}>
+          <Text style={[styles.passwordHint, { color: "#D9534F" }]}>
             {passwordHint}
           </Text>
         )}
 
-
-        {/* Confirm Password Input */}
+        {/* Confirm Password */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
@@ -173,47 +196,18 @@ export default function SignUp() {
           </TouchableOpacity>
         </View>
 
-        {/* Password mismatch error */}
         {confirmPassword.length > 0 && confirmPassword !== password && (
           <Text style={styles.errorText}>✖ Passwords do not match</Text>
         )}
 
-        {/* Sign Up Button */}
         <TouchableOpacity style={styles.signupButton} onPress={handleSignUp}>
           <Text style={styles.signupTextButton}>Sign Up</Text>
-        </TouchableOpacity>
-
-        {/* OR Divider */}
-        <Text style={styles.orText}>Or</Text>
-
-        {/* Google Sign Up */}
-        <TouchableOpacity style={styles.googleButton}>
-          <Image
-            source={require("../assets/google-icon.png")}
-            style={styles.googleIcon}
-          />
-          <Text style={styles.googleText}>Google</Text>
-        </TouchableOpacity>
-
-        {/* Already have an account */}
-        <Text style={styles.loginText}>
-          Already have an account?{" "}
-          <Text
-            style={styles.loginLink}
-            onPress={() => navigation.navigate("Login")}
-          >
-            Log In
-          </Text>
-        </Text>
-
-        {/* Terms */}
-        <TouchableOpacity>
-          <Text style={styles.terms}>Terms and Conditions</Text>
         </TouchableOpacity>
       </View>
     </ImageBackground>
   );
 }
+
 
 const styles = StyleSheet.create({
   background: { flex: 1, justifyContent: "center", alignItems: "center" },

@@ -11,17 +11,23 @@ import {
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useFonts } from "expo-font";
 import { useNavigation } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons"; // ✅ for back button
+import { Ionicons } from "@expo/vector-icons";
+import { StackNavigationProp } from "@react-navigation/stack";
+import { RootStackParamList } from "../App";
+import { useAuth } from "../src/contexts/AuthContext";  // ✅ use context
+
+type ScanPageNavigationProp = StackNavigationProp<RootStackParamList, "Scan">;
 
 const { width } = Dimensions.get("window");
-
 type CameraFacing = "front" | "back";
 
 export default function ScanPage() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<ScanPageNavigationProp>();
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<CameraFacing>("back");
   const cameraRef = useRef<CameraView>(null);
+
+  const { signOut, accessToken } = useAuth(); // ✅ from AuthContext
 
   const [fontsLoaded] = useFonts({
     Poppins: require("../assets/fonts/Poppins-Regular.ttf"),
@@ -30,6 +36,7 @@ export default function ScanPage() {
     "Poppins-SemiBold": require("../assets/fonts/Poppins-SemiBold.ttf"),
   });
 
+  // ✅ Take picture and send to Django API
   const takePicture = async () => {
     if (cameraRef.current) {
       try {
@@ -38,12 +45,41 @@ export default function ScanPage() {
           base64: false,
         });
         console.log("Photo taken:", photo.uri);
+
+        if (!accessToken) {
+          Alert.alert("Error", "No access token available. Please login again.");
+          return;
+        }
+
+        // ✅ Send photo info to Django with JWT
+        const response = await fetch("http://127.0.0.1:8000/api/scan/", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`, // attach token
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ imageUri: photo.uri }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log("Scan saved:", result);
+
         Alert.alert("Photo Captured!", "Plant scan complete!");
       } catch (error) {
         console.error("Error taking picture:", error);
         Alert.alert("Error", "Failed to take picture");
       }
     }
+  };
+
+  // ✅ Use context logout instead of supabase.signOut directly
+  const handleLogout = () => {
+    signOut();
+    navigation.goBack();
   };
 
   if (!fontsLoaded) return null;
@@ -67,9 +103,9 @@ export default function ScanPage() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.backButton, { backgroundColor: "#666" }]}
-          onPress={() => navigation.goBack()}
+          onPress={handleLogout}
         >
-          <Text style={styles.backButtonText}>Go Back</Text>
+          <Text style={styles.backButtonText}>Logout</Text>
         </TouchableOpacity>
       </View>
     );
@@ -78,76 +114,74 @@ export default function ScanPage() {
   return (
     <View style={styles.container}>
       <CameraView style={styles.camera} facing={facing} ref={cameraRef}>
-       {/* Top Bar */}
-<View style={styles.topBar}>
-  {/* Left - Back button */}
-  <TouchableOpacity onPress={() => navigation.goBack()}>
-    <Ionicons name="chevron-back" size={28} color="#fff" />
-  </TouchableOpacity>
+        {/* Top Bar */}
+        <View style={styles.topBar}>
+          {/* Left - Logout */}
+          <TouchableOpacity onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={28} color="#fff" />
+          </TouchableOpacity>
 
-  {/* Right - Notification + Avatar */}
-  <View style={styles.rightTopContainer}>
-    <TouchableOpacity>
-      <Ionicons name="notifications-outline" size={26} color="#fff" /> 
-      {/* You can also use "notifications" for filled style */}
-    </TouchableOpacity>
-    <TouchableOpacity style={styles.profileCircle} />
-  </View>
-</View>
+          {/* Right - Notification + Avatar */}
+          <View style={styles.rightTopContainer}>
+            <TouchableOpacity>
+              <Ionicons name="notifications-outline" size={26} color="#fff" />
+            </TouchableOpacity>
 
+            {/* 👉 Navigate to Profile.tsx */}
+            <TouchableOpacity
+              style={styles.profileCircle}
+              onPress={() => navigation.navigate("Profile")}
+            />
+          </View>
+        </View>
 
-     {/* Bottom main controls row */}
-<View style={styles.bottomControls}>
-  {/* Capture button centered absolutely */}
-  <TouchableOpacity onPress={takePicture} style={styles.captureButton} />
+        {/* Bottom controls */}
+        <View style={styles.bottomControls}>
+          <TouchableOpacity onPress={takePicture} style={styles.captureButton} />
+          <TouchableOpacity style={styles.rightIconWrapper}>
+            <Image
+              source={require("../assets/search-image-icon.png")}
+              style={styles.bottomIcon}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        </View>
 
-  {/* Right icon */}
-  <TouchableOpacity style={styles.rightIconWrapper}>
-    <Image
-      source={require("../assets/search-image-icon.png")}
-      style={styles.bottomIcon}
-      resizeMode="contain"
-    />
-  </TouchableOpacity>
-</View>
+        {/* Bottom icons row */}
+        <View style={styles.bottomBar}>
+          <TouchableOpacity>
+            <Image
+              source={require("../assets/search-icon-bot.png")}
+              style={styles.searchIcon}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
 
+          <TouchableOpacity>
+            <Image
+              source={require("../assets/photo-camera.png")}
+              style={[styles.cameraIcon, { marginHorizontal: 55 }]}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
 
-     {/* Row of 3 smaller icons BELOW */}
-<View style={styles.bottomBar}>
-  <TouchableOpacity>
-    <Image
-      source={require("../assets/search-icon-bot.png")}
-      style={styles.searchIcon}   // 👈 unique style
-      resizeMode="contain"
-    />
-  </TouchableOpacity>
-
-  <TouchableOpacity>
-    <Image
-      source={require("../assets/photo-camera.png")}
-      style={[styles.cameraIcon, { marginHorizontal: 55 }]}  // 👈 unique style
-      resizeMode="contain"
-    />
-  </TouchableOpacity>
-
-  <TouchableOpacity>
-    <Image
-      source={require("../assets/journal-icon.png")}
-      style={styles.journalIcon}  // 👈 unique style
-      resizeMode="contain"
-    />
-  </TouchableOpacity>
-</View>
-
+          <TouchableOpacity>
+            <Image
+              source={require("../assets/journal-icon.png")}
+              style={styles.journalIcon}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        </View>
       </CameraView>
     </View>
   );
 }
 
+// --- STYLES (same as before) ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   camera: { flex: 1 },
-
   loadingText: {
     flex: 1,
     textAlign: "center",
@@ -178,8 +212,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Poppins-Medium",
   },
-
-  // --- Top Bar ---
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -187,40 +219,25 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     paddingHorizontal: 20,
   },
-  topIcon: { width: 20, height: 20, tintColor: "#fff" },
-  rightTopContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  rightTopContainer: { flexDirection: "row", alignItems: "center" },
   profileCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#444", // Placeholder for avatar
+    backgroundColor: "#444",
     marginLeft: 12,
   },
-
-  // --- Main Bottom Controls ---
   bottomControls: {
-  position: "absolute",
-  bottom: 100,
-  left: 0,
-  right: 0,
-  flexDirection: "row",
-  justifyContent: "center", // ✅ capture button stays centered
-  alignItems: "center",
+    position: "absolute",
+    bottom: 100,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  rightIconWrapper: {
-  position: "absolute",
-  right: 60, // ✅ adjust distance from right edge
-  bottom: 15, // aligns nicely with capture button
-},
-  bottomIcon: {
-    width: 32,
-    height: 32,
-    tintColor: "#fff",
-    marginLeft: 20,
-  },
+  rightIconWrapper: { position: "absolute", right: 60, bottom: 15 },
+  bottomIcon: { width: 32, height: 32, tintColor: "#fff", marginLeft: 20 },
   captureButton: {
     width: 70,
     height: 70,
@@ -229,26 +246,21 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: "rgba(255,255,255,0.6)",
   },
-
-  // --- 3 small icons row ---
-bottomBar: {
-  position: "absolute",
-  bottom: 0, // ✅ stick to very bottom
-  left: 0,
-  right: 0,
-  height: 80, // ✅ gives it some height
-  backgroundColor: "rgba(0,0,0,0.5)", // ✅ semi-transparent black
-  flexDirection: "row",
-  justifyContent: "space-around",
-  alignItems: "center",
-  paddingHorizontal: 40,
-  borderTopLeftRadius: 16, // optional, smooth edges
-  borderTopRightRadius: 16, // optional
-},
-
-searchIcon: { width: 60, height: 60, tintColor: "#fff" },   // smaller
-cameraIcon: { width: 59, height: 40, tintColor: "#fff" },   // medium
-journalIcon: { width: 50, height: 35, tintColor: "#fff" },  // in-between
-
-  
+  bottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    paddingHorizontal: 40,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  searchIcon: { width: 60, height: 60, tintColor: "#fff" },
+  cameraIcon: { width: 59, height: 40, tintColor: "#fff" },
+  journalIcon: { width: 50, height: 35, tintColor: "#fff" },
 });
