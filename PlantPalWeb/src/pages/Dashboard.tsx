@@ -3,15 +3,13 @@ import {
   Crown,
   Leaf,
   User,
-  FileText,
-  MessageSquare,
-  Monitor,
   X,
   CheckCircle,
   AlertTriangle,
 } from "lucide-react";
-import DashboardLogo from "../assets/dashboard-logo.png";
 import BackgroundImage from "../assets/background.png";
+
+
 
 export default function Dashboard() {
   return (
@@ -20,58 +18,12 @@ export default function Dashboard() {
       style={{ backgroundImage: `url(${BackgroundImage})` }}
     >
       {/* Sidebar */}
-      <aside className="w-72 bg-[#bcd1ab] flex flex-col shadow-lg">
-        {/* Logo */}
-        <div className="flex flex-col items-center mt-4 px-6">
-          <img
-            src={DashboardLogo}
-            alt="Dashboard Logo"
-            className="w-50 h-auto object-contain"
-          />
-        </div>
-
-        {/* Menu */}
-            <nav className="flex-1 px-5 space-y-2">
-             <button className="w-full flex items-center gap-4 px-4 py-3 rounded-lg bg-[#a8c496] text-[#1f331f] font-bold shadow-md border-l-4 border-[#2F4F2F]">
-                <Monitor size={22} strokeWidth={2.5} className="text-[#1f331f]" />
-                <span className="text-md font-bold tracking-wide">DASHBOARD</span>
-            </button>
-            <button className="w-full flex items-center gap-4 px-4 py-3 rounded-lg text-[#2F4F2F] hover:bg-[#a8c496]/50 transition">
-                <User size={22} strokeWidth={2} />
-                <span className="text-md font-semibold tracking-wide">USERS ACCOUNT</span>
-            </button>
-            <button className="w-full flex items-center gap-4 px-4 py-3 rounded-lg text-[#2F4F2F] hover:bg-[#a8c496]/50 transition">
-                <MessageSquare size={22} strokeWidth={2} />
-                <span className="text-md font-semibold tracking-wide">FEEDBACKS</span>
-            </button>
-            <button className="w-full flex items-center gap-4 px-4 py-3 rounded-lg text-[#2F4F2F] hover:bg-[#a8c496]/50 transition">
-                <FileText size={22} strokeWidth={2} />
-                <span className="text-md font-semibold tracking-wide">TERMS & CONDITION</span>
-            </button>
-            <button className="w-full flex items-center gap-4 px-4 py-3 rounded-lg text-[#2F4F2F] hover:bg-[#a8c496]/50 transition">
-                <User size={22} strokeWidth={2} />
-                <span className="text-md font-semibold tracking-wide">ADMIN PROFILE</span>
-            </button>
-            </nav>
-
-      </aside>
+      
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col bg-white/20 backdrop-blur-sm">
         {/* Header */}
-        <header className="flex justify-between items-center px-10 py-5 bg-transparent shadow-sm">
-          <h2 className="text-3xl font-bold text-[#2F4F2F] tracking-wider">
-            DASHBOARD
-          </h2>
-          <div className="flex items-center gap-4">
-            <span className="text-base font-semibold text-gray-800 tracking-wider">
-              ADMIN
-            </span>
-            <div className="w-12 h-12 rounded-full bg-[#e07856] flex items-center justify-center">
-              <User size={24} color="white" />
-            </div>
-          </div>
-        </header>
+        
 
         {/* Stats Cards */}
         <section className="grid grid-cols-3 gap-6 px-10 py-8 bg-transparent">

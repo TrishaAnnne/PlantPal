@@ -115,11 +115,12 @@ CORS_ALLOW_ALL_ORIGINS = True
 # Django REST Framework + JWT Authentication
 # ==========================================================
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-    ),
+    # Remove JWT as the default authentication class
+    "DEFAULT_AUTHENTICATION_CLASSES": (),
+    
+    # Make all views public by default
     "DEFAULT_PERMISSION_CLASSES": (
-        "rest_framework.permissions.AllowAny",  # change to IsAuthenticated for production
+        "rest_framework.permissions.AllowAny",
     ),
 }
 
