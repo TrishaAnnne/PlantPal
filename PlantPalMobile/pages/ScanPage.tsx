@@ -139,13 +139,13 @@ export default function ScanPage() {
         <View style={styles.bottomControls}>
           <TouchableOpacity onPress={takePicture} style={styles.captureButton} />
           <TouchableOpacity style={styles.rightIconWrapper}>
-            <Image
-              source={require("../assets/search-image-icon.png")}
+            <Image      
+              source={require("../assets/search-image-icon.png")}                                       
               style={styles.bottomIcon}
               resizeMode="contain"
             />
           </TouchableOpacity>
-        </View>
+        </View>                                             
 
         {/* Bottom icons row */}
         <View style={styles.bottomBar}>

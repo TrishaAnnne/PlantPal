@@ -10,6 +10,7 @@ urlpatterns = [
 
      # ✅ new route for PlantPal Web
     path('admin-signup/', views.admin_signup, name='admin_signup'),
+    path('refresh_token/', views.refresh_token, name='refresh_token'),
     path("admin_login/", views.admin_login, name="admin_login"),
     path("add_plant/", views.add_plant, name="add_plant"),
     path("get_plants/", views.get_plants, name="get_plants"),
