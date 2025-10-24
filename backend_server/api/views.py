@@ -671,6 +671,78 @@ def get_plants(request):
     except Exception as e:
         print("❌ Error fetching plants:", traceback.format_exc())
         return Response({"error": str(e)}, status=500)
+    
+@api_view(["GET"])
+def search_plants(request):
+    """
+    Search plants by name, scientific name, or common names.
+    Also saves the search query to user history.
+    """
+    try:
+        query = request.GET.get("q", "").strip()
+        email = request.GET.get("email", "").strip().lower()
+
+        if not query:
+            return Response({"error": "Query required"}, status=400)
+
+        # Search plants by multiple fields
+        results = (
+            supabase.table("plants")
+            .select("*")
+            .ilike("plant_name", f"%{query}%")
+            .execute()
+        )
+
+        # if no match by plant_name, try scientific_name or common_names
+        if not results.data:
+            results = (
+                supabase.table("plants")
+                .select("*")
+                .or_(
+                    f"scientific_name.ilike.%{query}%,common_names.cs.{{{query}}}"
+                )
+                .execute()
+            )
+
+        # Save search history (if user logged in)
+        if email:
+            supabase.table("search_history").insert({
+                "user_email": email,
+                "query": query,
+                "timestamp": datetime.utcnow().isoformat(),
+            }).execute()
+
+        return Response(results.data, status=200)
+
+    except Exception as e:
+        print("⚠️ Error in search_plants:", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+
+@api_view(["GET"])
+def get_search_history(request):
+    """
+    Returns the user's previous search queries, most recent first.
+    """
+    try:
+        email = request.GET.get("email", "").strip().lower()
+        if not email:
+            return Response({"error": "Email required"}, status=400)
+
+        response = (
+            supabase.table("search_history")
+            .select("query, timestamp")
+            .eq("user_email", email)
+            .order("timestamp", desc=True)
+            .limit(10)
+            .execute()
+        )
+
+        return Response(response.data, status=200)
+
+    except Exception as e:
+        print("⚠️ Error fetching search history:", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+
 
 
 # ============================================================================
