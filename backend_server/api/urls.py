@@ -6,7 +6,8 @@ urlpatterns = [
     path("signup/", views.signup, name="signup"),
     path("profile/", views.profile, name="profile"),
     path("search-address/", views.search_address, name="search_address"),
-    path("update_profile/", views.update_profile, name="update_profile"),  # ✅ add this line
+    path("update_profile/", views.update_profile, name="update_profile"), 
+    path('api/search_plants/', views.search_plants, name='search_plants'), # ✅ add this line
 
      # ✅ new route for PlantPal Web
     path('admin-signup/', views.admin_signup, name='admin_signup'),

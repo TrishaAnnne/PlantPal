@@ -6,21 +6,23 @@ import SplashScreen from "./pages/SplashScreen";
 import LoginPage from "./pages/Login";
 import ScanPage from "./pages/ScanPage";
 import SignUp from "./pages/SignUp";
+import SearchPage from "./pages/SearchPage"; 
 
-// ✅ define all routes your stack can navigate to
+// ✅ Define all routes your stack can navigate to
 export type RootStackParamList = {
   Login: undefined;
   Scan: undefined;
   SignUp: undefined;
+  Search: undefined;
 };
 
-const Stack = createStackNavigator<RootStackParamList>(); // ✅ typed stack
+const Stack = createStackNavigator<RootStackParamList>();
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 3000); // 3-second splash
+    const timer = setTimeout(() => setShowSplash(false), 3000); // 3-second splash screen
     return () => clearTimeout(timer);
   }, []);
 
@@ -36,11 +38,12 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator
         initialRouteName="Login"
-        screenOptions={{ headerShown: false }} // hides headers globally
+        screenOptions={{ headerShown: false }} // Hide headers globally
       >
         <Stack.Screen name="Login" component={LoginPage} />
         <Stack.Screen name="Scan" component={ScanPage} />
         <Stack.Screen name="SignUp" component={SignUp} />
+        <Stack.Screen name="Search" component={SearchPage} /> {/* ✅ Fixed */}
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -49,6 +52,6 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff", // optional: ensures splash background is white
+    backgroundColor: "#fff", 
   },
 });

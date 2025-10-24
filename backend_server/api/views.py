@@ -5,6 +5,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.response import Response
 from rest_framework import status
+from .models import Plants 
 import json
 
 # JWT & SimpleJWT
@@ -674,49 +675,25 @@ def get_plants(request):
     
 @api_view(["GET"])
 def search_plants(request):
-    """
-    Search plants by name, scientific name, or common names.
-    Also saves the search query to user history.
-    """
-    try:
-        query = request.GET.get("q", "").strip()
-        email = request.GET.get("email", "").strip().lower()
-
-        if not query:
-            return Response({"error": "Query required"}, status=400)
-
-        # Search plants by multiple fields
-        results = (
-            supabase.table("plants")
-            .select("*")
-            .ilike("plant_name", f"%{query}%")
-            .execute()
-        )
-
-        # if no match by plant_name, try scientific_name or common_names
-        if not results.data:
-            results = (
-                supabase.table("plants")
-                .select("*")
-                .or_(
-                    f"scientific_name.ilike.%{query}%,common_names.cs.{{{query}}}"
-                )
-                .execute()
-            )
-
-        # Save search history (if user logged in)
-        if email:
-            supabase.table("search_history").insert({
-                "user_email": email,
-                "query": query,
-                "timestamp": datetime.utcnow().isoformat(),
-            }).execute()
-
-        return Response(results.data, status=200)
-
-    except Exception as e:
-        print("⚠️ Error in search_plants:", traceback.format_exc())
-        return Response({"error": str(e)}, status=500)
+    query = request.GET.get("q", "")
+    if query:
+        plants = Plants.objects.filter(plant_name__icontains=query)
+        data = [
+            {
+                "id": plant.id,
+                "plant_name": plant.plant_name,
+                "scientific_name": plant.scientific_name,
+                "common_names": plant.common_names,
+                "origin": plant.origin,
+                "habitat": plant.habitat,
+                "plant_type": plant.plant_type,
+                "link": plant.link,
+            }
+            for plant in plants
+        ]
+    else:
+        data = []
+    return Response(data)
 
 @api_view(["GET"])
 def get_search_history(request):

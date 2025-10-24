@@ -13,11 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
 import { useNavigation } from "@react-navigation/native";
-import { createClient } from "@supabase/supabase-js";
-
-const SUPABASE_URL = "https://kgpghqsbomdlwtuitefs.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtncGdocXNib21kbHd0dWl0ZWZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxNzgyMTcsImV4cCI6MjA3Mzc1NDIxN30.L6VnrpdZX1rCjoyXo7b0X1uENYfNMh_dT542sRn9irE";
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function SearchPage() {
   const navigation = useNavigation();
@@ -37,7 +33,6 @@ export default function SearchPage() {
     loadHistory();
   }, []);
 
-  // Load search history from local storage
   const loadHistory = async () => {
     try {
       const saved = await AsyncStorage.getItem("searchHistory");
@@ -47,13 +42,9 @@ export default function SearchPage() {
     }
   };
 
-  // Save search history
   const saveHistory = async (term: string) => {
     try {
-      const updated = [term, ...history.filter((item) => item !== term)].slice(
-        0,
-        5
-      );
+      const updated = [term, ...history.filter((item) => item !== term)].slice(0, 5);
       setHistory(updated);
       await AsyncStorage.setItem("searchHistory", JSON.stringify(updated));
     } catch (err) {
@@ -61,18 +52,18 @@ export default function SearchPage() {
     }
   };
 
-  // Search from Supabase
+  // 🔍 Search plants from Django API
   const handleSearch = async () => {
     if (!query.trim()) return;
     setLoading(true);
     setResults([]);
+
     try {
-      const { data, error } = await supabase
-        .from("plants")
-        .select("*")
-        .ilike("name", `%${query}%`);
-      if (error) throw error;
-      setResults(data || []);
+     
+      const response = await fetch(`http://127.0.0.1:8000/api/search_plants/?q=${query}`);
+      if (!response.ok) throw new Error("Failed to fetch data");
+      const data = await response.json();
+      setResults(data);
       await saveHistory(query);
     } catch (err) {
       console.error("Search error:", err);
@@ -95,7 +86,6 @@ export default function SearchPage() {
       resizeMode="cover"
     >
       <ScrollView contentContainerStyle={styles.container}>
-        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={24} color="#2F4F2F" />
@@ -104,7 +94,6 @@ export default function SearchPage() {
           <Ionicons name="leaf-outline" size={24} color="#2F4F2F" />
         </View>
 
-        {/* Search Bar */}
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={22} color="#2F4F2F" />
           <TextInput
@@ -120,16 +109,11 @@ export default function SearchPage() {
           </TouchableOpacity>
         </View>
 
-        {/* Search History */}
         {history.length > 0 && (
           <View style={styles.historyCard}>
             <Text style={styles.sectionTitle}>Recent Searches</Text>
             {history.map((term, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.historyItem}
-                onPress={() => handleHistoryPress(term)}
-              >
+              <TouchableOpacity key={index} style={styles.historyItem} onPress={() => handleHistoryPress(term)}>
                 <Ionicons name="time-outline" size={18} color="#2F4F2F" />
                 <Text style={styles.historyText}>{term}</Text>
               </TouchableOpacity>
@@ -137,44 +121,27 @@ export default function SearchPage() {
           </View>
         )}
 
-        {/* Results */}
         <View style={styles.resultsContainer}>
           {loading ? (
             <ActivityIndicator size="large" color="#2F4F2F" />
           ) : results.length > 0 ? (
             results.map((plant, index) => (
               <View key={index} style={styles.resultCard}>
-                {plant.image_url ? (
-                  <Image
-                    source={{ uri: plant.image_url }}
-                    style={styles.plantImage}
-                  />
-                ) : (
-                  <Ionicons
-                    name="leaf-outline"
-                    size={50}
-                    color="#2F4F2F"
-                    style={{ marginBottom: 10 }}
-                  />
-                )}
-                <Text style={styles.plantName}>{plant.name}</Text>
+                <Ionicons name="leaf-outline" size={50} color="#2F4F2F" />
+                <Text style={styles.plantName}>{plant.plant_name}</Text>
                 <Text style={styles.plantDesc} numberOfLines={2}>
-                  {plant.description}
+                  {plant.scientific_name || "No scientific name available"}
                 </Text>
               </View>
             ))
           ) : (
-            query !== "" && (
-              <Text style={styles.noResultText}>No plants found.</Text>
-            )
+            query !== "" && <Text style={styles.noResultText}>No plants found.</Text>
           )}
         </View>
       </ScrollView>
     </ImageBackground>
   );
 }
-
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const styles = StyleSheet.create({
   bg: { flex: 1, width: "100%", height: "100%" },
@@ -186,11 +153,7 @@ const styles = StyleSheet.create({
     width: "90%",
     marginBottom: 20,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontFamily: "Poppins-SemiBold",
-    color: "#2F4F2F",
-  },
+  headerTitle: { fontSize: 20, fontFamily: "Poppins-SemiBold", color: "#2F4F2F" },
   searchBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -221,17 +184,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 8,
   },
-  historyItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  historyText: {
-    marginLeft: 8,
-    fontFamily: "Poppins",
-    color: "#2F4F2F",
-    fontSize: 14,
-  },
+  historyItem: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  historyText: { marginLeft: 8, fontFamily: "Poppins", color: "#2F4F2F", fontSize: 14 },
   resultsContainer: { width: "90%", alignItems: "center" },
   resultCard: {
     width: "100%",
@@ -241,19 +195,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 15,
   },
-  plantImage: { width: 80, height: 80, borderRadius: 40, marginBottom: 10 },
-  plantName: {
-    fontFamily: "Poppins-SemiBold",
-    fontSize: 16,
-    color: "#1c2c1c",
-    marginBottom: 5,
-  },
-  plantDesc: {
-    fontFamily: "Poppins",
-    fontSize: 13,
-    color: "#2F4F2F",
-    textAlign: "center",
-  },
+  plantName: { fontFamily: "Poppins-SemiBold", fontSize: 16, color: "#1c2c1c", marginBottom: 5 },
+  plantDesc: { fontFamily: "Poppins", fontSize: 13, color: "#2F4F2F", textAlign: "center" },
   noResultText: {
     fontFamily: "Poppins",
     fontSize: 14,
