@@ -5,7 +5,6 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Plants 
 import json
 
 # JWT & SimpleJWT
@@ -25,7 +24,11 @@ import random
 import uuid
 from datetime import datetime, timedelta
 
-
+import base64
+import io
+from PIL import Image
+import torch
+from torchvision import transforms
 # --------------------------------------------------------------------
 # Address search
 # --------------------------------------------------------------------
@@ -673,33 +676,50 @@ def get_plants(request):
         print("❌ Error fetching plants:", traceback.format_exc())
         return Response({"error": str(e)}, status=500)
     
+# =====================================================================
+# ✅ SEARCH PLANTS (via Supabase, with partial match on name/scientific_name)
+# =====================================================================
 @api_view(["GET"])
 def search_plants(request):
-    query = request.GET.get("q", "")
-    if query:
-        plants = Plants.objects.filter(plant_name__icontains=query)
-        data = [
-            {
-                "id": plant.id,
-                "plant_name": plant.plant_name,
-                "scientific_name": plant.scientific_name,
-                "common_names": plant.common_names,
-                "origin": plant.origin,
-                "habitat": plant.habitat,
-                "plant_type": plant.plant_type,
-                "link": plant.link,
-            }
-            for plant in plants
-        ]
-    else:
-        data = []
-    return Response(data)
+    try:
+        query = request.GET.get("q", "").strip()
+        if not query:
+            return Response({"error": "Missing search query"}, status=400)
 
+        # Search in plant_name and scientific_name fields
+        response = (
+            supabase.table("plants")
+            .select("*")
+            .or_(f"plant_name.ilike.%{query}%,scientific_name.ilike.%{query}%")
+            .execute()
+        )
+
+        plants = response.data or []
+
+        # Fetch related images for each plant
+        for plant in plants:
+            plant_id = plant["id"]
+            images_resp = (
+                supabase.table("plant_images")
+                .select("image_url")
+                .eq("plant_id", plant_id)
+                .execute()
+            )
+            plant["images"] = [img["image_url"] for img in images_resp.data]
+            plant["image"] = plant["images"][0] if plant["images"] else None
+
+        return Response(plants, status=200)
+
+    except Exception as e:
+        print("❌ Error in search_plants:", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+
+
+# =====================================================================
+# ✅ GET SEARCH HISTORY (from Supabase, by user email)
+# =====================================================================
 @api_view(["GET"])
 def get_search_history(request):
-    """
-    Returns the user's previous search queries, most recent first.
-    """
     try:
         email = request.GET.get("email", "").strip().lower()
         if not email:
@@ -714,14 +734,13 @@ def get_search_history(request):
             .execute()
         )
 
-        return Response(response.data, status=200)
+        history = response.data or []
+        return Response(history, status=200)
 
     except Exception as e:
-        print("⚠️ Error fetching search history:", traceback.format_exc())
+        print("⚠️ Error in get_search_history:", traceback.format_exc())
         return Response({"error": str(e)}, status=500)
-
-
-
+    
 # ============================================================================
 # ✅ UPDATE PLANT (with normalized ailments)
 # ============================================================================
@@ -875,4 +894,72 @@ def delete_plant(request, plant_id):
 
     except Exception as e:
         print("⚠️ Error deleting plant:", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+    
+
+@api_view(["POST"])
+def scan_plant(request):
+    try:
+        # 1️⃣ Verify JWT
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return Response({"error": "No valid authorization header"}, status=401)
+        
+        token_string = auth_header.split(" ")[1]
+        try:
+            access_token = AccessToken(token_string)
+            user_id = access_token.get("user_id")
+            if not user_id:
+                return Response({"error": "User ID not found in token"}, status=401)
+        except Exception as token_error:
+            return Response({"error": f"Invalid token: {str(token_error)}"}, status=401)
+        
+        # 2️⃣ Get base64 image
+        image_base64 = request.data.get("imageBase64")
+        if not image_base64:
+            return Response({"error": "No image provided"}, status=400)
+        
+        image_data = base64.b64decode(image_base64)
+        image = Image.open(io.BytesIO(image_data)).convert("RGB")
+        
+        # 3️⃣ Preprocess image
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+        ])
+        input_tensor = transform(image).unsqueeze(0)  # batch of 1
+        
+        # 4️⃣ Load model
+        model = torch.load("models/plant_classifier.pth", map_location=torch.device("cpu"))
+        model.eval()
+        
+        # 5️⃣ Predict
+        with torch.no_grad():
+            outputs = model(input_tensor)
+            _, predicted = torch.max(outputs, 1)
+        
+        # You need a mapping from class index to plant name
+        class_to_name = {
+            0: "Tarragon",
+            1: "Peppermint",
+            2: "Chocomint",
+            # add all classes here...
+        }
+        plant_name = class_to_name.get(predicted.item(), "Unknown")
+        
+        # 6️⃣ Insert into Supabase
+        scan_data = {
+            "plant_name": plant_name,
+            "user_id": str(user_id),
+            "scanned_at": request.data.get("scanned_at") or datetime.utcnow().isoformat()
+        }
+        inserted = supabase.table("plants").insert(scan_data).execute()
+        plant_id = inserted.data[0]["id"] if inserted.data else None
+        
+        return Response({"plant_id": plant_id, "plant_name": plant_name}, status=201)
+    
+    except Exception as e:
+        print("⚠️ Error in scan_plant:", traceback.format_exc())
         return Response({"error": str(e)}, status=500)

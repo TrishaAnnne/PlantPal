@@ -15,6 +15,9 @@ urlpatterns = [
     path("admin_login/", views.admin_login, name="admin_login"),
     path("add_plant/", views.add_plant, name="add_plant"),
     path("get_plants/", views.get_plants, name="get_plants"),
+    path("search_plants/", views.search_plants, name="search_plants"),
+    path("api/scan-plant/", views.scan_plant, name="scan_plant"),
+    path("get_search_history/", views.get_search_history, name="get_search_history"),  
     path("update_plant/<uuid:plant_id>/", views.update_plant, name="update_plant"),
     path("delete_plant/<uuid:plant_id>/", views.delete_plant, name="delete_plant"),
 
