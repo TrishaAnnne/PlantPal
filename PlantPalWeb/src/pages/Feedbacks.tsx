@@ -42,7 +42,6 @@ export default function UserFeedbacks() {
         {/* Feedback Table */}
         <section>
           <div className="bg-white rounded-2xl shadow-md p-6 mb-8">
-            
 
             <table className="w-full text-left border-separate border-spacing-y-2">
               <thead>
