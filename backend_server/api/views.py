@@ -820,22 +820,23 @@ def get_terms_conditions(request):
 @api_view(["PUT"])
 def update_admin_profile(request):
     try:
+        admin_id = request.data.get("id")
+        if not admin_id:
+            return Response({"error": "Admin ID is required"}, status=400)
+
         email = request.data.get("email", "").strip().lower()
         user_name = request.data.get("user_name", "").strip()
         current_password = request.data.get("current_password", "").strip()
         new_password = request.data.get("new_password", "").strip()
 
-        if not email:
-            return Response({"error": "Email is required"}, status=400)
-
-        
-        response = supabase.table("admin").select("*").eq("email", email).execute()
+        response = supabase.table("admin").select("*").eq("id", admin_id).execute()
         admins = response.data
         if not admins:
             return Response({"error": "Admin not found"}, status=404)
 
         admin = admins[0]
-       
+
+        # verify current password if provided
         if current_password and hash_password_sha256(current_password) != admin["password"]:
             return Response({"error": "Incorrect current password"}, status=400)
 
@@ -855,10 +856,11 @@ def update_admin_profile(request):
 
         supabase.table("admin").update(updates).eq("id", admin["id"]).execute()
 
-        return Response({"message": "Profile updated successfully!"}, status=200)
+        return Response({"message": "Profile updated successfully!", "admin": {**admin, **updates}}, status=200)
 
     except Exception as e:
         import traceback
         print(traceback.format_exc())
         return Response({"error": str(e)}, status=500)
+
 

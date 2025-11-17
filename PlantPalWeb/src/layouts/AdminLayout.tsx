@@ -30,7 +30,7 @@ export default function AdminLayout() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // keep local fields in sync if admin changes (when component mounts or admin updates)
+  // Sync local fields if admin changes
   useEffect(() => {
     if (!admin) {
       navigate("/login", { replace: true });
@@ -66,24 +66,20 @@ export default function AdminLayout() {
     e.preventDefault();
 
     if (!username || !email) {
-      toast.error("⚠️ Please fill all required fields");
+      toast.error("Please fill all required fields");
       return;
     }
 
-    // MUST provide current password to save any change (name/email or password)
-    if (!currentPassword) {
-      toast.error("🔒 Please enter your current password to save changes");
-      return;
-    }
-
-    // If attempting to change password, validate new password fields
     if (newPassword || confirmPassword) {
-      if (newPassword !== confirmPassword) {
-        toast.error("❌ New password and confirmation do not match");
+      if (!currentPassword) {
+        toast.error("Please enter your current password to change password");
         return;
       }
-
-      const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
+      if (newPassword !== confirmPassword) {
+        toast.error("New password and confirmation do not match");
+        return;
+      }
+      const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
       if (!passwordRegex.test(newPassword)) {
         toast.error(
           "🔑 New password must be at least 8 characters long and contain letters and numbers"
@@ -94,57 +90,56 @@ export default function AdminLayout() {
 
     setLoading(true);
 
-    // Build payload exactly as backend expects
     const payload: Record<string, any> = {
+      id: admin?.id,  // <-- add this line
       email: email.trim().toLowerCase(),
       user_name: username.trim(),
       current_password: currentPassword,
-    };
+    };  
     if (newPassword) payload.new_password = newPassword;
 
+
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/update-admin-profile/", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        "http://127.0.0.1:8000/api/update-admin-profile/",
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
 
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        // show backend-provided message if available
         const errMsg = data.error || data.message || "Update failed";
-        if (typeof errMsg === "string" && errMsg.toLowerCase().includes("incorrect")) {
-          toast.error("🚫 Current password is incorrect");
+        if (
+          typeof errMsg === "string" &&
+          errMsg.toLowerCase().includes("incorrect")
+        ) {
+          toast.error("Current password is incorrect");
         } else {
           toast.error(errMsg);
         }
         return;
       }
 
-      // Success: update local UI (we cannot modify context admin here unless useAuth provides setter)
-      toast.success("✅ Profile updated successfully!");
+      toast.success("Profile updated successfully!");
+
+      // Update local storage or context
+      if (admin) {
+        const updatedAdmin = { ...admin, user_name: username, email };
+        localStorage.setItem("admin", JSON.stringify(updatedAdmin));
+      }
 
       // Clear passwords and close modal
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       setIsModalOpen(false);
-
-      // If your useAuth provides a refresh or setter to update admin context, call it here.
-      // Fallback: if you're storing admin in localStorage, update it there, or refresh page.
-      // Example (uncomment if you use localStorage for admin):
-      // const stored = JSON.parse(localStorage.getItem("admin") || "{}");
-      // stored.user_name = username;
-      // stored.email = email;
-      // localStorage.setItem("admin", JSON.stringify(stored));
-      //
-      // If you want the change to reflect immediately in the header/sidebar, update local state:
-      // (we already set username/email state above and they are used for display)
-
     } catch (err) {
       console.error("Update error:", err);
-      toast.error("⚠️ Unable to update profile. Network error.");
+      toast.error("Unable to update profile. Network error.");
     } finally {
       setLoading(false);
     }
@@ -155,7 +150,7 @@ export default function AdminLayout() {
       className="flex h-screen font-['Poppins'] bg-cover bg-center"
       style={{ backgroundImage: `url(${BackgroundImage})` }}
     >
-      {/* Toast Bubble Notifications */}
+      {/* Toast Notifications */}
       <Toaster
         position="top-right"
         toastOptions={{
@@ -256,7 +251,7 @@ export default function AdminLayout() {
           <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50">
             <div className="bg-white rounded-2xl shadow-lg p-8 w-[90%] max-w-md animate-fadeIn">
               <h3 className="text-2xl font-bold text-[#2F4F2F] mb-6 text-center">
-                Edit Admin Profile
+                 Admin Profile
               </h3>
 
               <form onSubmit={handleSave} className="space-y-4">
@@ -302,7 +297,7 @@ export default function AdminLayout() {
                   </button>
                 </div>
 
-                {/* New Password (optional) */}
+                {/* New Password */}
                 <div className="flex items-center bg-[#e1e9d7] rounded-full px-4 py-3">
                   <input
                     type={showPassword ? "text" : "password"}
@@ -331,9 +326,7 @@ export default function AdminLayout() {
                   />
                   <button
                     type="button"
-                    onClick={() =>
-                      setShowConfirmPassword(!showConfirmPassword)
-                    }
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     className="w-10 h-10 rounded-full bg-[#faffef] flex items-center justify-center hover:bg-gray-200 transition"
                   >
                     {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}

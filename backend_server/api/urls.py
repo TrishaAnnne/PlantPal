@@ -19,8 +19,8 @@ urlpatterns = [
     # Terms & Conditions Management
     path("add_terms_conditions/", views.add_terms_conditions, name="add_terms_conditions"),
     path("get_terms_conditions/", views.get_terms_conditions, name="get_terms_conditions"),
+    path("update-admin-profile/", views.update_admin_profile, name='update-admin-profile'),
     
-
     
 
 
