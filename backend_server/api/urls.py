@@ -16,6 +16,13 @@ urlpatterns = [
     path("update_plant/<uuid:plant_id>/", views.update_plant, name="update_plant"),
     path("delete_plant/<uuid:plant_id>/", views.delete_plant, name="delete_plant"),
 
+    # Terms & Conditions Management
+    path("add_terms_conditions/", views.add_terms_conditions, name="add_terms_conditions"),
+    path("get_terms_conditions/", views.get_terms_conditions, name="get_terms_conditions"),
+    
+
+    
+
 
 
 ]

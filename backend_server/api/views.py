@@ -705,3 +705,160 @@ def delete_plant(request, plant_id):
     except Exception as e:
         print("⚠️ Error deleting plant:", traceback.format_exc())
         return Response({"error": str(e)}, status=500)
+
+#terms and conditions for admin   
+@api_view(['POST'])
+def add_terms_conditions(request):
+    """
+    Admin: Add a new Terms and Conditions version
+    """
+    try:
+        data = request.data
+        version = data.get("version")
+        content = data.get("content")
+        effective_date = data.get("effective_date")
+
+        if not version or not content or not effective_date:
+            return Response({"error": "version, content, and effective_date are required"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Deactivate all currently active versions
+        supabase.table("terms_conditions").update({"is_active": False}).eq("is_active", True).execute()
+
+        # Insert the new active version
+        new_terms = (
+            supabase.table("terms_conditions")
+            .insert({
+                "version": version,
+                "content": content,
+                "effective_date": effective_date,
+                "is_active": True
+            })
+            .execute()
+        )
+
+        return Response({
+            "message": "New terms and conditions version added successfully!",
+            "terms": new_terms.data[0]
+        }, status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        print(traceback.format_exc())
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+#for the user terms and conditions   
+@api_view(['POST'])
+def accept_terms_conditions(request):
+    """
+    User: Accept current Terms and Conditions
+    """
+    try:
+        data = request.data
+        user_id = data.get("user_id")
+        terms_id = data.get("terms_id")
+
+        if not user_id or not terms_id:
+            return Response({"error": "user_id and terms_id are required"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if already accepted
+        existing = (
+            supabase.table("user_acceptance")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("terms_id", terms_id)
+            .execute()
+        )
+        if existing.data:
+            return Response({"message": "User already accepted this version."},
+                            status=status.HTTP_200_OK)
+
+        # Insert new acceptance record
+        acceptance = (
+            supabase.table("user_acceptance")
+            .insert({
+                "user_id": user_id,
+                "terms_id": terms_id
+            })
+            .execute()
+        )
+
+        return Response({
+            "message": "Terms and Conditions accepted successfully!",
+            "acceptance": acceptance.data[0]
+        }, status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        print(traceback.format_exc())
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+
+# ✅ Get all Terms & Conditions versions (for admin dashboard)
+@api_view(['GET'])
+def get_terms_conditions(request):
+    """
+    Admin: Fetch all Terms and Conditions versions
+    """
+    try:
+        # Fetch all versions sorted by date (newest first)
+        response = (
+            supabase.table("terms_conditions")
+            .select("*")
+            .order("effective_date", desc=True)
+            .execute()
+        )
+
+        if not response.data:
+            return Response([], status=status.HTTP_200_OK)
+
+        return Response(response.data, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        print(traceback.format_exc())
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["PUT"])
+def update_admin_profile(request):
+    try:
+        email = request.data.get("email", "").strip().lower()
+        user_name = request.data.get("user_name", "").strip()
+        current_password = request.data.get("current_password", "").strip()
+        new_password = request.data.get("new_password", "").strip()
+
+        if not email:
+            return Response({"error": "Email is required"}, status=400)
+
+        
+        response = supabase.table("admin").select("*").eq("email", email).execute()
+        admins = response.data
+        if not admins:
+            return Response({"error": "Admin not found"}, status=404)
+
+        admin = admins[0]
+       
+        if current_password and hash_password_sha256(current_password) != admin["password"]:
+            return Response({"error": "Incorrect current password"}, status=400)
+
+        updates = {}
+        if user_name and user_name != admin["user_name"]:
+            updates["user_name"] = user_name
+        if email and email != admin["email"]:
+            updates["email"] = email
+
+        if new_password:
+            if not current_password:
+                return Response({"error": "Current password is required to change password"}, status=400)
+            updates["password"] = hash_password_sha256(new_password)
+
+        if not updates:
+            return Response({"message": "No changes detected"}, status=200)
+
+        supabase.table("admin").update(updates).eq("id", admin["id"]).execute()
+
+        return Response({"message": "Profile updated successfully!"}, status=200)
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+
