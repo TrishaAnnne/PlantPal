@@ -1,18 +1,20 @@
-// App.tsx
 import React, { useState, useEffect } from "react";
-import { SafeAreaView, StyleSheet, ActivityIndicator, View, Text } from "react-native";
+import {
+  SafeAreaView,
+  StyleSheet,
+  ActivityIndicator,
+  View,
+} from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-
-// ✅ Pages — make sure each page has a default export
+import { createNativeStackNavigator } from "@react-navigation/native-stack"; 
 import SplashScreen from "./pages/SplashScreen";
 import LoginPage from "./pages/Login";
 import ScanPage from "./pages/ScanPage";
 import SignUp from "./pages/SignUp";
 import Profile from "./pages/Profile";
 import EditProfile from "./pages/EditProfile";
+import SearchPage from "./pages/SearchPage"; 
 
-// ✅ AuthContext
 import { AuthProvider, useAuth } from "./src/contexts/AuthContext";
 
 export type RootStackParamList = {
@@ -21,11 +23,12 @@ export type RootStackParamList = {
   SignUp: undefined;
   Profile: undefined;
   EditProfile: undefined;
+  Search: undefined; // ✅ Added
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// Navigation depending on auth state
+// ✅ Navigation depending on auth state
 function AppNavigator() {
   const { user, loading } = useAuth();
 
@@ -38,12 +41,27 @@ function AppNavigator() {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        animation: "slide_from_right", // 🎞️ Native-stack built-in transition
+      }}
+    >
       {user ? (
         <>
           <Stack.Screen name="Scan" component={ScanPage} />
           <Stack.Screen name="Profile" component={Profile} />
           <Stack.Screen name="EditProfile" component={EditProfile} />
+
+          {/* ✅ SearchPage with native slide transition */}
+          <Stack.Screen
+            name="Search"
+            component={SearchPage}
+            options={{
+              animation: "slide_from_right",
+              gestureEnabled: true,
+            }}
+          />
         </>
       ) : (
         <>
@@ -59,7 +77,7 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 2000); // 2s splash
+    const timer = setTimeout(() => setShowSplash(false), 2000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -81,10 +99,7 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
+  container: { flex: 1, backgroundColor: "#fff" },
   loader: {
     flex: 1,
     justifyContent: "center",

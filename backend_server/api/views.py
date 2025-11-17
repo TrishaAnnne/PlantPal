@@ -9,7 +9,7 @@ import json
 
 # JWT & SimpleJWT
 import jwt
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken,AccessToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 
@@ -24,7 +24,11 @@ import random
 import uuid
 from datetime import datetime, timedelta
 
-
+import base64
+import io
+from PIL import Image
+import torch
+from torchvision import transforms
 # --------------------------------------------------------------------
 # Address search
 # --------------------------------------------------------------------
@@ -391,9 +395,37 @@ def admin_signup(request):
         )
 
 
-# --------------------------------------------------------------------
-# ✅ LOGIN
-# --------------------------------------------------------------------
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def refresh_token(request):
+    try:
+        refresh_token = request.data.get("refresh")
+        
+        if not refresh_token:
+            return Response({"error": "Refresh token required."}, status=400)
+        
+        # Validate and refresh the token
+        refresh = RefreshToken(refresh_token)
+        
+        # Get the admin_id from the refresh token
+        admin_id = refresh.get('admin_id')
+        email = refresh.get('email')
+        user_name = refresh.get('user_name')
+        
+        # Generate new access token with the same claims
+        new_access = refresh.access_token
+        new_access['admin_id'] = admin_id
+        new_access['email'] = email
+        new_access['user_name'] = user_name
+        
+        return Response({
+            "access": str(new_access),
+            "message": "Token refreshed successfully"
+        }, status=200)
+        
+    except Exception as e:
+        print(f"❌ Refresh token error: {e}")
+        return Response({"error": "Invalid or expired refresh token."}, status=401)
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -414,11 +446,17 @@ def admin_login(request):
         if hash_password_sha256(password) != admin["password"]:
             return Response({"error": "Invalid credentials."}, status=401)
 
-        # 🔑 Generate JWT tokens
-        refresh = RefreshToken.for_user(type("Admin", (), {"id": admin["id"]}))
+        # 🔑 Generate JWT tokens with admin_id in payload
+        refresh = RefreshToken()
+        
+        # ✅ Add custom claims to the token
+        refresh['admin_id'] = admin['id']
+        refresh['email'] = admin['email']
+        refresh['user_name'] = admin['user_name']
+        
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
-
+                                                    
         admin_data = {
             "id": admin["id"],
             "email": admin["email"],
@@ -438,21 +476,32 @@ def admin_login(request):
         return Response({"error": "Internal server error."}, status=500)
 
 
-# --------------------------------------------------------------------
-# ✅ ADD PLANT
-# --------------------------------------------------------------------
+# ============================================================================
+# ✅ ADD PLANT (with normalized ailments)
+# ============================================================================
 @api_view(["POST"])
 def add_plant(request):
     try:
-        # --------------------------------------------------------------------
-        # Get authenticated admin ID
-        # --------------------------------------------------------------------
-        user = request.user
-        admin_id = getattr(user, "id", None)
+        # Extract admin_id from JWT token
+        auth_header = request.headers.get('Authorization', '')
+        
+        if not auth_header.startswith('Bearer '):
+            return Response({"error": "No valid authorization header"}, status=401)
+        
+        token_string = auth_header.split(' ')[1]
+        
+        try:
+            access_token = AccessToken(token_string)
+            admin_id = access_token.get('admin_id')
+            
+            if not admin_id:
+                return Response({"error": "Admin ID not found in token"}, status=401)
+                
+        except Exception as token_error:
+            print(f"❌ Token error: {token_error}")
+            return Response({"error": f"Invalid token: {str(token_error)}"}, status=401)
 
-        # --------------------------------------------------------------------
         # Extract plant data from form
-        # --------------------------------------------------------------------
         plant_name = request.data.get("plant_name")
         scientific_name = request.data.get("scientific_name")
         common_names_raw = request.data.get("common_names") or ""
@@ -460,23 +509,20 @@ def add_plant(request):
         distribution = request.data.get("distribution")
         habitat = request.data.get("habitat")
         plant_type = request.data.get("plant_type")
-        herbal_benefits = request.data.get("herbal_benefits")
         link = request.data.get("link")
         kingdom = request.data.get("kingdom")
         order = request.data.get("order")
         family = request.data.get("family")
         genus = request.data.get("genus")
 
-        # --------------------------------------------------------------------
         # Convert comma-separated common_names to PostgreSQL text[]
-        # --------------------------------------------------------------------
-        common_names = [
-            name.strip() for name in common_names_raw.split(",") if name.strip()
-        ] if common_names_raw else None
+        common_names = (
+            [name.strip() for name in common_names_raw.split(",") if name.strip()]
+            if common_names_raw
+            else None
+        )
 
-        # --------------------------------------------------------------------
-        # Insert plant record into Supabase
-        # --------------------------------------------------------------------
+        # These are now stored per-ailment in plant_ailments table
         plant_data = {
             "plant_name": plant_name,
             "scientific_name": scientific_name,
@@ -485,13 +531,12 @@ def add_plant(request):
             "distribution": distribution,
             "habitat": habitat,
             "plant_type": plant_type,
-            "herbal_benefits": herbal_benefits,
             "link": link,
             "kingdom": kingdom,
             "order": order,
             "family": family,
             "genus": genus,
-            "admin_id": str(admin_id) if admin_id else None,
+            "admin_id": str(admin_id),
         }
 
         plant_insert = supabase.table("plants").insert(plant_data).execute()
@@ -500,9 +545,32 @@ def add_plant(request):
 
         plant_id = plant_insert.data[0]["id"]
 
-        # --------------------------------------------------------------------
-        # Handle multiple plant image uploads 🌿
-        # --------------------------------------------------------------------
+        ailments_raw = request.data.get("ailments", [])
+        if ailments_raw:
+            # Parse ailments if it's a JSON string
+            if isinstance(ailments_raw, str):
+                try:
+                    ailments_raw = json.loads(ailments_raw)
+                except json.JSONDecodeError:
+                    ailments_raw = []
+            
+            # Insert each ailment with its reference and herbal benefit
+            ailment_records = []
+            if isinstance(ailments_raw, list):
+                for ailment_item in ailments_raw:
+                    if isinstance(ailment_item, dict):
+                        ailment_records.append({
+                            "plant_id": str(plant_id),
+                            "ailment": ailment_item.get("ailment", ""),
+                            "reference": ailment_item.get("reference", ""),
+                            "herbal_benefit": ailment_item.get("herbalBenefit", ""),
+                            "disease_type": ailment_item.get("diseaseType", ""),
+                        })
+            
+            if ailment_records:
+                supabase.table("plant_ailments").insert(ailment_records).execute()
+
+        # Handle multiple plant image uploads
         uploaded_images = request.FILES.getlist("images")
         image_records = []
 
@@ -511,18 +579,9 @@ def add_plant(request):
                 try:
                     ext = image.name.split(".")[-1]
                     file_name = f"plants/{uuid.uuid4()}.{ext}"
-
-                    # Upload to Supabase bucket: plant-images ✅
                     supabase.storage.from_("plant-images").upload(file_name, image.read())
-
-                    # Get public URL
                     public_url = supabase.storage.from_("plant-images").get_public_url(file_name)
-
-                    image_records.append({
-                        "plant_id": plant_id,
-                        "image_url": public_url,
-                    })
-
+                    image_records.append({"plant_id": plant_id, "image_url": public_url})
                 except Exception:
                     traceback.print_exc()
                     continue
@@ -530,9 +589,7 @@ def add_plant(request):
             if image_records:
                 supabase.table("plant_images").insert(image_records).execute()
 
-        # --------------------------------------------------------------------
-        # Handle multiple leaf image uploads 🍃
-        # --------------------------------------------------------------------
+        # Handle multiple leaf image uploads
         uploaded_leaf_images = request.FILES.getlist("leaf_images")
         leaf_records = []
 
@@ -541,18 +598,9 @@ def add_plant(request):
                 try:
                     ext = leaf.name.split(".")[-1]
                     file_name = f"leaves/{uuid.uuid4()}.{ext}"
-
-                    # Upload to Supabase bucket: plant-leaf-images ✅
                     supabase.storage.from_("plant-leaf-images").upload(file_name, leaf.read())
-
-                    # Get public URL
                     public_url = supabase.storage.from_("plant-leaf-images").get_public_url(file_name)
-
-                    leaf_records.append({
-                        "plant_id": plant_id,
-                        "leaf_image_url": public_url,
-                    })
-
+                    leaf_records.append({"plant_id": plant_id, "leaf_image_url": public_url})
                 except Exception:
                     traceback.print_exc()
                     continue
@@ -560,26 +608,29 @@ def add_plant(request):
             if leaf_records:
                 supabase.table("plant_leaves").insert(leaf_records).execute()
 
-        # --------------------------------------------------------------------
-        # Return success
-        # --------------------------------------------------------------------
         return Response(
-            {"message": "✅ Plant and leaf images added successfully!", "plant_id": plant_id},
+            {"message": "✅ Plant and ailments added successfully!", "plant_id": str(plant_id)},
             status=status.HTTP_201_CREATED,
         )
 
     except Exception as e:
         print("⚠️ Error in add_plant:", traceback.format_exc())
-        return Response(
-            {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+# ============================================================================
+# ✅ GET PLANTS (with ailments grouped by disease type)
+# ============================================================================
 @api_view(["GET"])
 def get_plants(request):
     try:
-        # Fetch all plants ordered by created_at descending (newest first by default)
-        response = supabase.table("plants").select("*").order("created_at", desc=True).execute()
-        plants = response.data
+        response = (
+            supabase.table("plants")
+            .select("*")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        plants = response.data or []
 
         for plant in plants:
             plant_id = plant["id"]
@@ -591,56 +642,193 @@ def get_plants(request):
                 .eq("plant_id", plant_id)
                 .execute()
             )
-
-            # Store images in the plant dictionary
             plant["images"] = [img["image_url"] for img in plant_images_resp.data]
-
-            # Set the main display image (use first image if available)
             plant["image"] = plant["images"][0] if plant["images"] else None
+
+            ailments_resp = (
+                supabase.table("plant_ailments")
+                .select("*")
+                .eq("plant_id", plant_id)
+                .execute()
+            )
+            
+            ailments = ailments_resp.data or []
+            
+            # Group ailments by disease_type
+            ailments_by_disease = {}
+            for ailment in ailments:
+                disease_type = ailment.get("disease_type", "Other")
+                if disease_type not in ailments_by_disease:
+                    ailments_by_disease[disease_type] = []
+                
+                ailments_by_disease[disease_type].append({
+                    "ailment": ailment.get("ailment"),
+                    "reference": ailment.get("reference"),
+                    "herbalBenefit": ailment.get("herbal_benefit"),
+                })
+            
+            plant["ailments"] = ailments_by_disease
+            plant["ailmentsList"] = ailments  # Also provide flat list if needed
 
         return Response(plants, status=200)
 
     except Exception as e:
         print("❌ Error fetching plants:", traceback.format_exc())
         return Response({"error": str(e)}, status=500)
+    
+# =====================================================================
+# ✅ SEARCH PLANTS (via Supabase, with partial match on name/scientific_name)
+# =====================================================================
+@api_view(["GET"])
+def search_plants(request):
+    try:
+        query = request.GET.get("q", "").strip()
+        if not query:
+            return Response({"error": "Missing search query"}, status=400)
 
+        # Search in plant_name and scientific_name fields
+        response = (
+            supabase.table("plants")
+            .select("*")
+            .or_(f"plant_name.ilike.%{query}%,scientific_name.ilike.%{query}%")
+            .execute()
+        )
+
+        plants = response.data or []
+
+        # Fetch related images for each plant
+        for plant in plants:
+            plant_id = plant["id"]
+            images_resp = (
+                supabase.table("plant_images")
+                .select("image_url")
+                .eq("plant_id", plant_id)
+                .execute()
+            )
+            plant["images"] = [img["image_url"] for img in images_resp.data]
+            plant["image"] = plant["images"][0] if plant["images"] else None
+
+        return Response(plants, status=200)
+
+    except Exception as e:
+        print("❌ Error in search_plants:", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+
+
+# =====================================================================
+# ✅ GET SEARCH HISTORY (from Supabase, by user email)
+# =====================================================================
+@api_view(["GET"])
+def get_search_history(request):
+    try:
+        email = request.GET.get("email", "").strip().lower()
+        if not email:
+            return Response({"error": "Email required"}, status=400)
+
+        response = (
+            supabase.table("search_history")
+            .select("query, timestamp")
+            .eq("user_email", email)
+            .order("timestamp", desc=True)
+            .limit(10)
+            .execute()
+        )
+
+        history = response.data or []
+        return Response(history, status=200)
+
+    except Exception as e:
+        print("⚠️ Error in get_search_history:", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+    
+# ============================================================================
+# ✅ UPDATE PLANT (with normalized ailments)
+# ============================================================================
 @api_view(["PATCH"])
 def update_plant(request, plant_id):
     try:
-        # ------------------- Allowed fields -------------------
+        plant_id_str = str(plant_id)
+        
+        # Extract admin_id from JWT token
+        auth_header = request.headers.get('Authorization', '')
+        
+        if not auth_header.startswith('Bearer '):
+            return Response({"error": "No valid authorization header"}, status=401)
+        
+        token_string = auth_header.split(' ')[1]
+        
+        try:
+            access_token = AccessToken(token_string)
+            admin_id = access_token.get('admin_id')
+            
+            if not admin_id:
+                return Response({"error": "Admin ID not found in token"}, status=401)
+                
+        except Exception as token_error:
+            print(f"❌ Token error: {token_error}")
+            return Response({"error": f"Invalid token: {str(token_error)}"}, status=401)
+
         allowed_fields = [
             "plant_name", "scientific_name", "common_names", "origin",
-            "distribution", "habitat", "plant_type", "herbal_benefits",
-            "link", "kingdom", "order", "family", "genus"
+            "distribution", "habitat", "plant_type", "link", "kingdom", 
+            "order", "family", "genus"
         ]
 
         update_data = {}
+
         for field in allowed_fields:
             if field in request.data:
                 update_data[field] = request.data.get(field)
 
-        # Convert common_names from string to list if needed
+        # Handle common_names
         if "common_names" in update_data and isinstance(update_data["common_names"], str):
             update_data["common_names"] = [
                 n.strip() for n in update_data["common_names"].split(",") if n.strip()
             ]
 
-        # Abort if no fields, deleted_images, or new files
         if not update_data and "deleted_images" not in request.data and not request.FILES.getlist("images"):
             return Response({"error": "No fields to update."}, status=400)
 
-        # ------------------- Update plant fields -------------------
+        # Update plant fields
         if update_data:
             response = (
                 supabase.table("plants")
                 .update(update_data)
-                .eq("id", str(plant_id))  # Ensure plant_id is string
+                .eq("id", plant_id_str)
                 .execute()
             )
             if not response.data:
                 return Response({"error": "Plant not found or update failed."}, status=404)
 
-        # ------------------- Handle deleted images -------------------
+        ailments_raw = request.data.get("ailments")
+        if ailments_raw is not None:
+            # Delete old ailments
+            supabase.table("plant_ailments").delete().eq("plant_id", plant_id_str).execute()
+            
+            # Parse ailments if it's a JSON string
+            if isinstance(ailments_raw, str):
+                try:
+                    ailments_raw = json.loads(ailments_raw)
+                except json.JSONDecodeError:
+                    ailments_raw = []
+            
+            # Insert new ailments
+            ailment_records = []
+            if isinstance(ailments_raw, list):
+                for ailment_item in ailments_raw:
+                    if isinstance(ailment_item, dict):
+                        ailment_records.append({
+                            "plant_id": plant_id_str,
+                            "ailment": ailment_item.get("ailment", ""),
+                            "reference": ailment_item.get("reference", ""),
+                            "herbal_benefit": ailment_item.get("herbalBenefit", ""),
+                            "disease_type": ailment_item.get("diseaseType", ""),
+                        })
+            
+            if ailment_records:
+                supabase.table("plant_ailments").insert(ailment_records).execute()
+
+        # Handle deleted images
         deleted_images = request.data.get("deleted_images")
         if deleted_images:
             try:
@@ -652,18 +840,14 @@ def update_plant(request, plant_id):
             except Exception as e:
                 print("⚠️ Failed to delete image:", e)
 
-        # ------------------- Handle newly uploaded images -------------------
+        # Handle newly uploaded images
         new_images = request.FILES.getlist("images")
         for image in new_images:
             try:
-                file_path = f"{str(uuid.uuid4())}_{image.name}"  # Convert UUID to string
+                file_path = f"{str(uuid.uuid4())}_{image.name}"
                 supabase.storage.from_("plant-images").upload(file_path, image.read())
                 public_url = supabase.storage.from_("plant-images").get_public_url(file_path)
-
-                supabase.table("plant_images").insert({
-                    "plant_id": str(plant_id),  # Convert plant_id to string
-                    "image_url": public_url,
-                }).execute()
+                supabase.table("plant_images").insert({"plant_id": plant_id_str, "image_url": public_url}).execute()
             except Exception as e:
                 print("⚠️ Failed to upload image:", e)
 
@@ -673,18 +857,24 @@ def update_plant(request, plant_id):
         print("⚠️ Error updating plant:", traceback.format_exc())
         return Response({"error": str(e)}, status=500)
 
+
+# ============================================================================
+# ✅ DELETE PLANT (with cascade delete for ailments)
+# ============================================================================
 @api_view(["DELETE"])
 def delete_plant(request, plant_id):
     try:
-        # 1️⃣ Get plant record
-        plant_response = supabase.table("plants").select("*").eq("id", plant_id).execute()
+        plant_id_str = str(plant_id)
+        
+        # Get plant record
+        plant_response = supabase.table("plants").select("*").eq("id", plant_id_str).execute()
         if not plant_response.data:
             return Response({"error": "Plant not found."}, status=404)
-        
-        plant = plant_response.data[0]
 
-        # 2️⃣ Delete plant images from storage
-        images_response = supabase.table("plant_images").select("image_url").eq("plant_id", plant_id).execute()
+        supabase.table("plant_ailments").delete().eq("plant_id", plant_id_str).execute()
+
+        # Delete plant images from storage
+        images_response = supabase.table("plant_images").select("image_url").eq("plant_id", plant_id_str).execute()
         images = images_response.data or []
 
         for img in images:
@@ -694,11 +884,11 @@ def delete_plant(request, plant_id):
             except Exception as e:
                 print("⚠️ Failed to delete image:", e)
 
-        # 3️⃣ Delete plant images records from DB
-        supabase.table("plant_images").delete().eq("plant_id", plant_id).execute()
+        # Delete plant images records from DB
+        supabase.table("plant_images").delete().eq("plant_id", plant_id_str).execute()
 
-        # 4️⃣ Delete the plant itself
-        supabase.table("plants").delete().eq("id", plant_id).execute()
+        # Delete the plant itself
+        supabase.table("plants").delete().eq("id", plant_id_str).execute()
 
         return Response({"message": "✅ Plant deleted successfully!"}, status=200)
 
@@ -864,3 +1054,72 @@ def update_admin_profile(request):
         return Response({"error": str(e)}, status=500)
 
 
+
+    
+
+@api_view(["POST"])
+def scan_plant(request):
+    try:
+        # 1️⃣ Verify JWT
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return Response({"error": "No valid authorization header"}, status=401)
+        
+        token_string = auth_header.split(" ")[1]
+        try:
+            access_token = AccessToken(token_string)
+            user_id = access_token.get("user_id")
+            if not user_id:
+                return Response({"error": "User ID not found in token"}, status=401)
+        except Exception as token_error:
+            return Response({"error": f"Invalid token: {str(token_error)}"}, status=401)
+        
+        # 2️⃣ Get base64 image
+        image_base64 = request.data.get("imageBase64")
+        if not image_base64:
+            return Response({"error": "No image provided"}, status=400)
+        
+        image_data = base64.b64decode(image_base64)
+        image = Image.open(io.BytesIO(image_data)).convert("RGB")
+        
+        # 3️⃣ Preprocess image
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+        ])
+        input_tensor = transform(image).unsqueeze(0)  # batch of 1
+        
+        # 4️⃣ Load model
+        model = torch.load("models/plant_classifier.pth", map_location=torch.device("cpu"))
+        model.eval()
+        
+        # 5️⃣ Predict
+        with torch.no_grad():
+            outputs = model(input_tensor)
+            _, predicted = torch.max(outputs, 1)
+        
+        # You need a mapping from class index to plant name
+        class_to_name = {
+            0: "Tarragon",
+            1: "Peppermint",
+            2: "Chocomint",
+            # add all classes here...
+        }
+        plant_name = class_to_name.get(predicted.item(), "Unknown")
+        
+        # 6️⃣ Insert into Supabase
+        scan_data = {
+            "plant_name": plant_name,
+            "user_id": str(user_id),
+            "scanned_at": request.data.get("scanned_at") or datetime.utcnow().isoformat()
+        }
+        inserted = supabase.table("plants").insert(scan_data).execute()
+        plant_id = inserted.data[0]["id"] if inserted.data else None
+        
+        return Response({"plant_id": plant_id, "plant_name": plant_name}, status=201)
+    
+    except Exception as e:
+        print("⚠️ Error in scan_plant:", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
