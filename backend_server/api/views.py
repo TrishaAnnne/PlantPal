@@ -1123,3 +1123,87 @@ def scan_plant(request):
     except Exception as e:
         print("⚠️ Error in scan_plant:", traceback.format_exc())
         return Response({"error": str(e)}, status=500)
+    
+
+# GET USERS (for Admin Dashboard, no JWT required for testing)
+# --------------------------------------------------------------------
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def get_users(request):
+    """
+    Fetch all registered users safely from Supabase.
+    """
+    try:
+        print("Fetching users from Supabase...")
+
+        response = supabase.table("users").select(
+            "id, user_name, user_email, created_at"
+        ).execute()
+
+        # No response.error in supabase-py v2
+        users = response.data  # This will be None if nothing found
+
+        if users is None:
+            return Response([], status=200)
+
+        # Map keys for frontend
+        formatted_users = [
+            {
+                "id": u.get("id"),
+                "full_name": u.get("user_name", "Unknown"),
+                "email": u.get("user_email", ""),
+                "date_joined": u.get("created_at", ""),
+            }
+            for u in users
+        ]
+
+        print(f"Returning {len(formatted_users)} users")
+        return Response(formatted_users, status=200)
+
+    except Exception as e:
+        import traceback
+        print("❌ Exception in get_users:", traceback.format_exc())
+        return Response({"error": f"Server error: {str(e)}"}, status=500)
+
+@api_view(["DELETE"])
+@permission_classes([AllowAny])  # replace with custom admin check later
+def delete_user(request, user_id):
+    try:
+        # Delete user from Supabase
+        response = supabase.table("users").delete().eq("id", user_id).execute()
+
+        # Supabase response handling
+        if hasattr(response, "error") and response.error:
+            return Response({"error": f"Supabase error: {response.error}"}, status=500)
+
+        if not response.data or len(response.data) == 0:
+            return Response({"error": "User not found"}, status=404)
+
+        return Response({"message": "User deleted successfully"}, status=200)
+
+    except Exception as e:
+        import traceback
+        print("❌ Exception in delete_user:", traceback.format_exc())
+        return Response({"error": f"Server error: {str(e)}"}, status=500)
+
+@api_view(['GET'])
+def get_latest_terms_conditions(request):
+    try:
+        response = (
+            supabase.table("terms_conditions")
+            .select("*")
+            .eq("is_active", True)
+            .order("effective_date", desc=True)
+            .limit(1)
+            .execute()
+        )
+
+        if not response.data:
+            return Response({"content": "No terms found."}, status=200)
+
+        latest_terms = response.data[0]
+        return Response({"content": latest_terms["content"]}, status=200)
+
+    except Exception as e:
+        print(traceback.format_exc())
+        return Response({"error": str(e)}, status=500)

@@ -25,6 +25,11 @@ urlpatterns = [
     path("add_terms_conditions/", views.add_terms_conditions, name="add_terms_conditions"),
     path("get_terms_conditions/", views.get_terms_conditions, name="get_terms_conditions"),
     path("update-admin-profile/", views.update_admin_profile, name='update-admin-profile'),
+    path("get_latest_terms_conditions/", views.get_latest_terms_conditions, name="get_latest_terms_conditions"),
+
+    #User Managemen Admin  
+    path("get_users/", views.get_users, name="get_users"),
+    path("delete_user/<str:user_id>/", views.delete_user, name="delete_user"),
     
     
 
