@@ -12,7 +12,8 @@ type AuthContextType = {
     access?: string,
     refresh?: string
   ) => void;
-  signOut: () => void;
+  signOut: () => Promise<void>;
+  getAuthHeader: () => { Authorization: string } | {};
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -21,7 +22,8 @@ const AuthContext = createContext<AuthContextType>({
   refreshToken: null,
   loading: false,
   setUser: () => {},
-  signOut: () => {},
+  signOut: async () => {},
+  getAuthHeader: () => ({}),
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -30,13 +32,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Load user & tokens from storage on first mount
+  // Load from AsyncStorage on mount
   useEffect(() => {
     (async () => {
       try {
         const storedUser = await AsyncStorage.getItem("user");
         const storedAccess = await AsyncStorage.getItem("accessToken");
         const storedRefresh = await AsyncStorage.getItem("refreshToken");
+
+        console.log("📱 Loaded from storage:", { storedUser, hasAccess: !!storedAccess });
 
         if (storedUser && storedAccess && storedRefresh) {
           setUserState(JSON.parse(storedUser));
@@ -51,41 +55,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })();
   }, []);
 
-  // Set user + tokens (called after login)
-  const setUser = async (
+  // Set or clear user and tokens
+  const setUser = (
     user: { email: string } | null,
     access?: string,
     refresh?: string
   ) => {
-    setUserState(user);
+    console.log("🔵 setUser called with:", { user, access, refresh });
 
     if (user && access && refresh) {
+      // ✅ Update state FIRST (synchronous, triggers re-render immediately)
+      setUserState(user);
       setAccessToken(access);
       setRefreshToken(refresh);
-      await AsyncStorage.setItem("user", JSON.stringify(user));
-      await AsyncStorage.setItem("accessToken", access);
-      await AsyncStorage.setItem("refreshToken", refresh);
+
+      console.log("🟢 State updated - user:", user.email);
+
+      // ✅ Then persist to AsyncStorage (asynchronous, happens in background)
+      AsyncStorage.setItem("user", JSON.stringify(user));
+      AsyncStorage.setItem("accessToken", access);
+      AsyncStorage.setItem("refreshToken", refresh);
     } else {
-      await AsyncStorage.removeItem("user");
-      await AsyncStorage.removeItem("accessToken");
-      await AsyncStorage.removeItem("refreshToken");
+      setUserState(null);
       setAccessToken(null);
       setRefreshToken(null);
+
+      console.log("🔴 User cleared");
+
+      AsyncStorage.multiRemove(["user", "accessToken", "refreshToken"]);
     }
   };
 
-  const signOut = () => {
-    setUser(null);
+  // Sign out
+  const signOut = async () => {
+    console.log("🚪 Signing out...");
+    setUserState(null);
+    setAccessToken(null);
+    setRefreshToken(null);
+    await AsyncStorage.multiRemove(["user", "accessToken", "refreshToken"]);
+  };
+
+  // Quick helper to add JWT headers in API requests
+  const getAuthHeader = () => {
+    if (!accessToken) return {};
+    return { Authorization: `Bearer ${accessToken}` };
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, accessToken, refreshToken, loading, setUser, signOut }}
+      value={{
+        user,
+        accessToken,
+        refreshToken,
+        loading,
+        setUser,
+        signOut,
+        getAuthHeader,
+      }}
     >
       {children}
     </AuthContext.Provider>
   );
 };
 
-// ✅ custom hook
 export const useAuth = () => useContext(AuthContext);

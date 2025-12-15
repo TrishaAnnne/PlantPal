@@ -6,33 +6,39 @@ import {
   View,
 } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack"; 
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+
 import SplashScreen from "./pages/SplashScreen";
 import LoginPage from "./pages/Login";
 import ScanPage from "./pages/ScanPage";
 import SignUp from "./pages/SignUp";
 import Profile from "./pages/Profile";
 import EditProfile from "./pages/EditProfile";
-import SearchPage from "./pages/SearchPage"; 
+import SearchPage from "./pages/SearchPage";
+import JournalPage from "./pages/JournalPage";
 
 import { AuthProvider, useAuth } from "./src/contexts/AuthContext";
 
+// Navigation type definition
 export type RootStackParamList = {
   Login: undefined;
   Scan: undefined;
   SignUp: undefined;
   Profile: undefined;
   EditProfile: undefined;
-  Search: undefined; // ✅ Added
+  Search: undefined;
+  Journal: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// ✅ Navigation depending on auth state
 function AppNavigator() {
   const { user, loading } = useAuth();
 
+  console.log("🔄 AppNavigator render - user:", user?.email || "null", "loading:", loading);
+
   if (loading) {
+    console.log("⏳ Still loading auth state...");
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" color="#4CAF50" />
@@ -40,11 +46,13 @@ function AppNavigator() {
     );
   }
 
+  console.log(user ? "✅ Showing authenticated screens" : "🔒 Showing login screens");
+
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        animation: "slide_from_right", // 🎞️ Native-stack built-in transition
+        animation: "slide_from_right",
       }}
     >
       {user ? (
@@ -52,15 +60,11 @@ function AppNavigator() {
           <Stack.Screen name="Scan" component={ScanPage} />
           <Stack.Screen name="Profile" component={Profile} />
           <Stack.Screen name="EditProfile" component={EditProfile} />
-
-          {/* ✅ SearchPage with native slide transition */}
+          <Stack.Screen name="Journal" component={JournalPage} />
           <Stack.Screen
             name="Search"
             component={SearchPage}
-            options={{
-              animation: "slide_from_right",
-              gestureEnabled: true,
-            }}
+            options={{ animation: "slide_from_right" }}
           />
         </>
       ) : (
@@ -77,7 +81,10 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 2000);
+    const timer = setTimeout(() => {
+      console.log("✨ Splash screen done");
+      setShowSplash(false);
+    }, 2000);
     return () => clearTimeout(timer);
   }, []);
 
