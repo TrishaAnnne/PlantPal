@@ -7,13 +7,24 @@ import {
   TouchableOpacity,
   Image,
   ImageBackground,
+  Modal,
+  ScrollView,
+  Platform,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Checkbox from "expo-checkbox";
 import { RootStackParamList } from "../App";
+
+// Determine backend base URL dynamically
+const BASE_URL =
+  Platform.OS === "android"
+    ? "http://10.0.2.2:8000"
+    : "http://localhost:8000";
 
 type SignUpScreenNavigationProp = StackNavigationProp<
   RootStackParamList,
@@ -27,6 +38,15 @@ export default function SignUp() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  // Terms modal states
+  const [termsVisible, setTermsVisible] = useState(false);
+  const [termsLoading, setTermsLoading] = useState(false);
+  const [termsContent, setTermsContent] = useState("");
+
+  // Email exists modal
+  const [emailExistsVisible, setEmailExistsVisible] = useState(false);
 
   const [fontsLoaded] = useFonts({
     Poppins: require("../assets/fonts/Poppins-Regular.ttf"),
@@ -38,57 +58,73 @@ export default function SignUp() {
 
   if (!fontsLoaded) return null;
 
+  const openTermsModal = async () => {
+    setTermsVisible(true);
+    setTermsLoading(true);
+    try {
+      const response = await fetch(`${BASE_URL}/api/get_latest_terms_conditions/`);
+      if (!response.ok) throw new Error("Failed to fetch Terms");
+      const result = await response.json();
+      setTermsContent(result.content || "No Terms and Conditions found.");
+    } catch (err) {
+      console.log(err);
+      setTermsContent("Failed to load Terms and Conditions.");
+    } finally {
+      setTermsLoading(false);
+    }
+  };
+
   const handleSignUp = async () => {
-  if (!email || !password || !confirmPassword) {
-    alert("Please fill all fields");
-    return;
-  }
-
-  if (password !== confirmPassword) {
-    alert("Passwords do not match");
-    return;
-  }
-
-  // Optional password strength check
-  const hasMinLength = password.length >= 8;
-  const hasNumber = /\d/.test(password);
-  const hasUppercase = /[A-Z]/.test(password);
-  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
-  if (!hasMinLength || !hasNumber || !hasUppercase || !hasSpecialChar) {
-    alert("Password is too weak");
-    return;
-  }
-
-  try {
-    const res = await fetch("http://127.0.0.1:8000/api/signup/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      alert(data.error || "Signup failed");
+    if (!email || !password || !confirmPassword) {
+      alert("Please fill all fields");
+      return;
+    }
+    if (password !== confirmPassword) {
+      alert("Passwords do not match");
+      return;
+    }
+    if (!agreedToTerms) {
+      alert("You must agree to the Terms and Conditions");
       return;
     }
 
-    // ✅ Store user info in AsyncStorage
-    await AsyncStorage.setItem("userEmail", data.user.email);
-    await AsyncStorage.setItem("username", data.user.username);
+    // Password strength check
+    const hasMinLength = password.length >= 8;
+    const hasNumber = /\d/.test(password);
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+    if (!hasMinLength || !hasNumber || !hasUppercase || !hasSpecialChar) {
+      alert("Password is too weak");
+      return;
+    }
 
-    // ✅ Friendly success message
-    alert(`Signed up successfully!\n\nWelcome ${data.user.username} 🌱`);
+    try {
+      const res = await fetch(`${BASE_URL}/api/signup/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        // If email already exists, show modal
+        if (data.error && data.error.includes("already exists")) {
+          setEmailExistsVisible(true);
+          return;
+        }
+        alert(data.error || "Signup failed");
+        return;
+      }
+      await AsyncStorage.setItem("userEmail", data.user.email);
+      await AsyncStorage.setItem("username", data.user.username);
 
-    navigation.navigate("Login");
-  } catch (err) {
-    console.error(err);
-    alert("Network error. Please try again.");
-  }
-};
+      alert(`Signed up successfully!\n\nWelcome ${data.user.username} 🌱`);
+      navigation.navigate("Login");
+    } catch (err) {
+      console.error(err);
+      alert("Network error. Please try again.");
+    }
+  };
 
-
-  // Password strength indicator
   const strengthCount =
     (password.length >= 8 ? 1 : 0) +
     (/\d/.test(password) ? 1 : 0) +
@@ -100,7 +136,8 @@ export default function SignUp() {
     if (password.length < 8) passwordHint = "At least 8 characters required";
     else if (!/\d/.test(password)) passwordHint = "Add a number";
     else if (!/[A-Z]/.test(password)) passwordHint = "Add an uppercase letter";
-    else if (!/[!@#$%^&*(),.?\":{}|<>]/.test(password)) passwordHint = "Add a special character";
+    else if (!/[!@#$%^&*(),.?\":{}|<>]/.test(password))
+      passwordHint = "Add a special character";
   } else passwordHint = "Strong password ✔";
 
   return (
@@ -110,6 +147,14 @@ export default function SignUp() {
       resizeMode="cover"
     >
       <View style={styles.container}>
+        {/* Back Button */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.navigate("Login")}
+        >
+          <Ionicons name="arrow-back-outline" size={24} color="#3B6E3B" />
+        </TouchableOpacity>
+
         <Image
           source={require("../assets/plantpal-logo.png")}
           style={styles.logo}
@@ -200,15 +245,75 @@ export default function SignUp() {
           <Text style={styles.errorText}>✖ Passwords do not match</Text>
         )}
 
-        <TouchableOpacity style={styles.signupButton} onPress={handleSignUp}>
+        {/* Terms and Conditions */}
+        <View style={styles.termsContainer}>
+          <Checkbox
+            value={agreedToTerms}
+            onValueChange={setAgreedToTerms}
+            color={agreedToTerms ? "#3B6E3B" : undefined}
+          />
+          <TouchableOpacity onPress={openTermsModal}>
+            <Text style={styles.termsText}>I agree to the Terms and Conditions</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={[
+            styles.signupButton,
+            { backgroundColor: agreedToTerms ? "#3B6E3B" : "#a0bfa0" },
+          ]}
+          onPress={handleSignUp}
+          disabled={!agreedToTerms}
+        >
           <Text style={styles.signupTextButton}>Sign Up</Text>
         </TouchableOpacity>
       </View>
+
+      {/* TERMS MODAL */}
+      <Modal visible={termsVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Terms and Conditions</Text>
+            {termsLoading ? (
+              <ActivityIndicator size="large" />
+            ) : (
+              <ScrollView style={styles.modalContent}>
+                <Text style={styles.modalText}>{termsContent}</Text>
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setTermsVisible(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* EMAIL EXISTS MODAL */}
+      <Modal visible={emailExistsVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Email Already Exists</Text>
+            <Text style={[styles.modalText, { marginBottom: 20 }]}>
+              The email you entered is already registered. Please use a different email or login.
+            </Text>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setEmailExistsVisible(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 }
 
-
+// --- Styles ---
 const styles = StyleSheet.create({
   background: { flex: 1, justifyContent: "center", alignItems: "center" },
   container: {
@@ -217,11 +322,20 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: "center",
   },
+  backButton: {
+    position: "absolute",
+    top: 15,
+    left: 15,
+    zIndex: 10,
+    padding: 5,
+    backgroundColor: "#FAFFEF",
+    borderRadius: 20,
+  },
   logo: {
     width: 80,
     height: 80,
     resizeMode: "contain",
-    marginBottom: 2,                  
+    marginBottom: 2,
   },
   title: {
     fontSize: 28,
@@ -272,15 +386,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
     borderRadius: 2,
   },
- passwordHint: {
-  fontSize: 12,
-  fontFamily: "Poppins",
-  marginBottom: 10,
-  alignSelf: "flex-start",
+  passwordHint: {
+    fontSize: 12,
+    fontFamily: "Poppins",
+    marginBottom: 10,
+    alignSelf: "flex-start",
   },
-
   signupButton: {
-    backgroundColor: "#3B6E3B",
     borderRadius: 20,
     paddingVertical: 12,
     width: "100%",
@@ -292,48 +404,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Poppins-Medium",
   },
-  orText: {
-    fontSize: 14,
-    fontFamily: "Poppins-Medium",
-    color: "#555",
-    marginBottom: 15,
-  },
-  googleButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    paddingVertical: 10,
-    width: "100%",
-    justifyContent: "center",
-    marginBottom: 25,
-    borderWidth: 1,
-    borderColor: "#ccc",
-  },
-  googleIcon: { width: 20, height: 20, marginRight: 8 },
-  googleText: { fontSize: 16, fontFamily: "Poppins", color: "#333" },
-  loginText: {
-    fontSize: 14,
-    fontFamily: "Poppins",
-    color: "#333",
-    marginBottom: 10,
-  },
-  loginLink: {
-    color: "#4A7C59",
-    fontFamily: "Poppins",
-    textDecorationLine: "underline",
-  },
-  terms: {
-    fontSize: 12,
-    fontFamily: "Poppins",
-    color: "#4A7C59",
-    textDecorationLine: "underline",
-  },
   errorText: {
     color: "#D9534F",
     fontSize: 12,
     alignSelf: "flex-start",
     marginBottom: 10,
     fontFamily: "Poppins",
+  },
+  termsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 15,
+    alignSelf: "flex-start",
+  },
+  termsText: {
+    fontFamily: "Poppins",
+    fontSize: 12,
+    color: "#4A7C59",
+    textDecorationLine: "underline",
+    marginLeft: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalBox: {
+    backgroundColor: "#fff",
+    borderRadius: 15,
+    padding: 20,
+    maxHeight: "80%",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontFamily: "Poppins-Bold",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  modalContent: { marginBottom: 20 },
+  modalText: {
+    fontSize: 14,
+    fontFamily: "Poppins",
+    lineHeight: 20,
+  },
+  closeButton: {
+    backgroundColor: "#4A7C59",
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  closeButtonText: {
+    color: "#fff",
+    fontFamily: "Poppins-Medium",
+    fontSize: 15,
   },
 });

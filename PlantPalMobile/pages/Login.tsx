@@ -1,3 +1,4 @@
+// Login.tsx
 import React, { useState } from "react";
 import {
   StyleSheet,
@@ -8,6 +9,9 @@ import {
   ImageBackground,
   Alert,
   ActivityIndicator,
+  Modal,
+  ScrollView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Checkbox from "expo-checkbox";
@@ -17,6 +21,12 @@ import { StackNavigationProp } from "@react-navigation/stack";
 import { RootStackParamList } from "../App";
 import { useAuth } from "../src/contexts/AuthContext";
 import GoogleLogin from "../src/components/GoogleLogin";
+
+// Determine backend base URL dynamically
+const BASE_URL =
+  Platform.OS === "android"
+    ? "http://10.0.2.2:8000"
+    : "http://localhost:8000";
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, "Login">;
 
@@ -30,6 +40,11 @@ export default function Login() {
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Modal state
+  const [termsVisible, setTermsVisible] = useState(false);
+  const [termsLoading, setTermsLoading] = useState(false);
+  const [termsContent, setTermsContent] = useState("");
+
   const [fontsLoaded] = useFonts({
     Poppins: require("../assets/fonts/Poppins-Regular.ttf"),
     "Poppins-Bold": require("../assets/fonts/Poppins-Bold.ttf"),
@@ -40,16 +55,33 @@ export default function Login() {
 
   if (!fontsLoaded) return null;
 
+  // Fetch latest terms
+  const openTermsModal = async () => {
+    setTermsVisible(true);
+    setTermsLoading(true);
+    try {
+      const response = await fetch(`${BASE_URL}/api/get_latest_terms_conditions/`);
+      if (!response.ok) throw new Error("Failed to fetch Terms");
+      const result = await response.json();
+      setTermsContent(result.content || "No Terms and Conditions found.");
+    } catch (err) {
+      console.log(err);
+      setTermsContent("Failed to load Terms and Conditions.");
+    } finally {
+      setTermsLoading(false);
+    }
+  };
+
+  // Handle login
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert("Missing Fields", "Please enter both email and password.");
+      Alert.alert("Missing fields", "Please enter both email and password.");
       return;
     }
 
     setLoading(true);
-
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/login/", {
+      const response = await fetch(`${BASE_URL}/api/login/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -58,34 +90,16 @@ export default function Login() {
       const result = await response.json();
 
       if (!response.ok) {
-        Alert.alert("Login Failed", result.error || "Invalid credentials.");
-        setLoading(false);
+        Alert.alert("Login failed", result.error || "Invalid email or password.");
         return;
       }
 
-      console.log("✅ Login API success, setting user...");
-
-      // ✅ Extract tokens from nested tokens object
-      const accessToken = result.tokens?.access;
-      const refreshToken = result.tokens?.refresh;
-
-      console.log("🔑 Extracted tokens:", { 
-        access: accessToken ? "exists" : "missing", 
-        refresh: refreshToken ? "exists" : "missing" 
-      });
-
-      // ✅ Set user - this will trigger AppNavigator to switch stacks
-      setUser(result.user, accessToken, refreshToken);
-
-      console.log("✅ User state updated - navigation should happen automatically");
-
+      await setUser({ email: result.user.email }, result.access, result.refresh);
     } catch (err) {
-      console.error("Unexpected error:", err);
+      console.log(err);
       Alert.alert("Error", "Could not connect to the server.");
-      setLoading(false);
     } finally {
-      // Don't set loading to false here if login succeeds
-      // Let the navigation transition happen first
+      setLoading(false);
     }
   };
 
@@ -98,11 +112,11 @@ export default function Login() {
       <View style={styles.container}>
         <Text style={styles.title}>Login</Text>
         <Text style={styles.subtitle}>
-          Log in to PlantPal+ and keep growing{"\n"}your herbal knowledge and wellness
-          {"\n"}journey.
+          Log in to PlantPal+ and keep growing{"\n"}your herbal knowledge and
+          wellness{"\n"}journey.
         </Text>
 
-        {/* Email Input */}
+        {/* Email */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
@@ -118,7 +132,7 @@ export default function Login() {
           </View>
         </View>
 
-        {/* Password Input */}
+        {/* Password */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
@@ -139,18 +153,19 @@ export default function Login() {
           </TouchableOpacity>
         </View>
 
-        {/* Remember Me + Forgot Password */}
+        {/* Remember Me / Forgot */}
         <View style={styles.row}>
           <View style={styles.rememberContainer}>
             <Checkbox
               value={remember}
               onValueChange={setRemember}
-              color={remember ? "#4A7C59" : "#fff"}
+              color={remember ? "#4A7C59" : undefined} // Use undefined instead of white
               style={{
-                width: 16,
-                height: 16,
-                transform: [{ scale: 0.9 }],
-                backgroundColor: "#fff",
+              width: 15,
+              height: 15,
+              borderWidth: 1, // ensures border visible
+              borderColor: "black",
+              borderRadius: 4,
               }}
             />
             <Text style={styles.remember}>Remember Me</Text>
@@ -160,7 +175,7 @@ export default function Login() {
           </TouchableOpacity>
         </View>
 
-        {/* Login Button */}
+        {/* Login button */}
         <TouchableOpacity
           style={styles.loginButton}
           onPress={handleLogin}
@@ -174,11 +189,10 @@ export default function Login() {
         </TouchableOpacity>
 
         <Text style={styles.orText}>Or</Text>
-
         <GoogleLogin />
 
         <Text style={styles.signupText}>
-          Don't have an account yet?{" "}
+          Do not have an account yet?{" "}
           <Text
             style={styles.signupLink}
             onPress={() => navigation.navigate("SignUp")}
@@ -187,10 +201,33 @@ export default function Login() {
           </Text>
         </Text>
 
-        <TouchableOpacity>
+        <TouchableOpacity onPress={openTermsModal}>
           <Text style={styles.terms}>Terms and Conditions</Text>
         </TouchableOpacity>
       </View>
+
+      {/* TERMS MODAL */}
+      <Modal visible={termsVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Terms and Conditions</Text>
+            {termsLoading ? (
+              <ActivityIndicator size="large" />
+            ) : (
+              <ScrollView style={styles.modalContent}>
+                <Text style={styles.modalText}>{termsContent}</Text>
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setTermsVisible(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -202,6 +239,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.9)",
   },
   iconCircle: {
     width: 35,
@@ -294,5 +332,40 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins",
     color: "#4A7C59",
     textDecorationLine: "underline",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalBox: {
+    backgroundColor: "#fff",
+    borderRadius: 15,
+    padding: 20,
+    maxHeight: "80%",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontFamily: "Poppins-Bold",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  modalContent: { marginBottom: 20 },
+  modalText: {
+    fontSize: 14,
+    fontFamily: "Poppins",
+    lineHeight: 20,
+  },
+  closeButton: {
+    backgroundColor: "#4A7C59",
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  closeButtonText: {
+    color: "#fff",
+    fontFamily: "Poppins-Medium",
+    fontSize: 15,
   },
 });
