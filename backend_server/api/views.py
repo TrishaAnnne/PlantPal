@@ -708,7 +708,31 @@ def search_plants(request):
             plant["images"] = [img["image_url"] for img in images_resp.data]
             plant["image"] = plant["images"][0] if plant["images"] else None
 
-        return Response(plants, status=200)
+            ailments_resp = (
+            supabase.table("plant_ailments")
+            .select("*")
+            .eq("plant_id", plant_id)
+            .execute()
+        )
+
+        ailments_resp = (
+            supabase.table("plant_ailments")
+            .select("*")
+            .eq("plant_id", plant_id)
+            .execute()
+        )
+
+        ailments = ailments_resp.data or []
+
+        ailments_by_disease = {}
+        for ailment in ailments:
+            disease_type = ailment.get("disease_type", "Other")
+            ailments_by_disease.setdefault(disease_type, []).append({
+                "ailment": ailment.get("ailment"),
+                "herbalBenefit": ailment.get("herbal_benefit"),
+            })
+
+        plant["ailments"] = ailments_by_disease
 
     except Exception as e:
         print("❌ Error in search_plants:", traceback.format_exc())

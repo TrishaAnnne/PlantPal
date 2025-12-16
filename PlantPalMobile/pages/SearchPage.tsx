@@ -98,7 +98,7 @@ export default function SearchPage() {
           <Ionicons name="search-outline" size={22} color="#2F4F2F" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search plant name..."
+            placeholder="What are you looking to treat?"
             placeholderTextColor="#3d583d"
             value={query}
             onChangeText={setQuery}
@@ -108,6 +108,16 @@ export default function SearchPage() {
             <Ionicons name="arrow-forward-circle" size={26} color="#2F4F2F" />
           </TouchableOpacity>
         </View>
+
+        <View style={styles.disclaimerBox}>
+          <Ionicons name="information-circle-outline" size={18} color="#2F4F2F" />
+          <Text style={styles.disclaimerText}>
+            Disclaimer: The medicinal and herbal uses shown are for educational and study purposes only.
+            They are not intended to diagnose, treat, cure, or prevent any disease.
+            Always consult a qualified healthcare professional.
+          </Text>
+        </View>
+
 
         {history.length > 0 && (
           <View style={styles.historyCard}>
@@ -127,12 +137,29 @@ export default function SearchPage() {
           ) : results.length > 0 ? (
             results.map((plant, index) => (
               <View key={index} style={styles.resultCard}>
-                <Ionicons name="leaf-outline" size={50} color="#2F4F2F" />
-                <Text style={styles.plantName}>{plant.plant_name}</Text>
-                <Text style={styles.plantDesc} numberOfLines={2}>
-                  {plant.scientific_name || "No scientific name available"}
+        <Ionicons name="leaf-outline" size={40} color="#2F4F2F" />
+
+        <Text style={styles.plantName}>{plant.plant_name}</Text>
+
+        <Text style={styles.plantDesc}>
+          {plant.scientific_name || "No scientific name available"}
+        </Text>
+
+        {plant.ailments && (
+          <View style={styles.usesBox}>
+            <Text style={styles.usesTitle}>Herbal Uses:</Text>
+
+            {Object.keys(plant.ailments).map((category, i) =>
+              plant.ailments[category].map((item: any, j: number) => (
+                <Text key={`${i}-${j}`} style={styles.usesText}>
+                  • {item.ailment} – {item.herbalBenefit}
                 </Text>
-              </View>
+              ))
+            )}
+          </View>
+          )}
+          </View>
+
             ))
           ) : (
             query !== "" && <Text style={styles.noResultText}>No plants found.</Text>
@@ -204,4 +231,40 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 10,
   },
+  usesBox: {
+  marginTop: 8,
+  width: "100%",
+  },
+
+  usesTitle: {
+    fontFamily: "Poppins-SemiBold",
+    fontSize: 14,
+    color: "#1c2c1c",
+    marginBottom: 4,
+  },
+
+  usesText: {
+    fontFamily: "Poppins",
+    fontSize: 13,
+    color: "#2F4F2F",
+    marginBottom: 2,
+  },
+
+  disclaimerBox: {
+    flexDirection: "row",
+    width: "90%",
+    backgroundColor: "rgba(255,255,255,0.7)",
+    padding: 12,
+    borderRadius: 15,
+    marginTop: 20,
+  },
+
+  disclaimerText: {
+    marginLeft: 8,
+    fontFamily: "Poppins",
+    fontSize: 12,
+    color: "#2F4F2F",
+    flex: 1,
+  },
+
 });
