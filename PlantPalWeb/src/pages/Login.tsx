@@ -29,46 +29,52 @@ export default function AdminLogin() {
     }
   }, [admin, navigate]);
 
-  // Typed form submission handler
-  const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setLoading(true);
+const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
+  setLoading(true);
 
-    try {
-      const res = await fetch(`${API_BASE}admin_login/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+  try {
+    const res = await fetch(`${API_BASE}admin_login/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
 
-      const data = await res.json();
+    const data = await res.json();
 
-      if (!res.ok) {
-        setErrorMessage(data.error || "Invalid email or password");
-        setShowErrorModal(true);
-        return;
-      }
-
-      const adminData = data.admin;
-      const accessToken = data.access;
-      const refreshToken = data.refresh;
-
-      if (!adminData || !accessToken || !refreshToken) {
-        toast.error("Unexpected server response");
-        return;
-      }
-
-      setAdmin(adminData, accessToken, refreshToken);
-      toast.success(`Welcome ${adminData.user_name || adminData.email}!`);
-      navigate("/dashboard", { replace: true });
-    } catch (err) {
-      console.error("⚠️ Login error:", err);
-      setErrorMessage("Network error. Please try again.");
+    if (!res.ok) {
+      setErrorMessage(data.error || "Invalid email or password");
       setShowErrorModal(true);
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
+
+    const adminData = data.admin;
+    const accessToken = data.access;
+    const refreshToken = data.refresh;
+
+    if (!adminData || !accessToken || !refreshToken) {
+      toast.error("Unexpected server response", { duration: 3000, position: "top-right" });
+      return;
+    }
+
+    setAdmin(adminData, accessToken, refreshToken);
+
+    // ✅ Welcome toast with 3 seconds duration
+    toast.success(`Welcome ${adminData.user_name || adminData.email}!`, {
+      duration: 3000,
+      position: "top-right",
+    });
+
+    navigate("/dashboard", { replace: true });
+  } catch (err) {
+    console.error("⚠️ Login error:", err);
+    setErrorMessage("Network error. Please try again.");
+    setShowErrorModal(true);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="relative h-screen w-screen flex items-center justify-center overflow-hidden">

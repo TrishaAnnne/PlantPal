@@ -6,6 +6,7 @@ type UserType = {
   id: string;
   full_name: string;
   email: string;
+  address: string;
   date_joined: string;
 };
 
@@ -106,7 +107,8 @@ export default function UserAccount() {
             <div className="relative inline-block mb-4">
               <button
                 onClick={() => setFilterOpen(!filterOpen)}
-                className="flex items-center gap-2 bg-green-700 hover:bg-green-800 text-white px-4 py-2 rounded-lg shadow-sm transition"
+                 className="flex items-center gap-2 bg-[#C9E4C5] hover:bg-[#b4d9ae] text-[#2F4F2F] font-medium px-4 py-2 rounded-lg shadow-sm transition"
+    
               >
                 Filter
                 <ChevronDown size={16} />
@@ -153,44 +155,77 @@ export default function UserAccount() {
               )}
             </div>
 
-            {/* Users Table */}
-            <table className="w-full text-left border-separate border-spacing-y-2">
-              <thead>
-                <tr className="text-[#2F4F2F] font-semibold text-sm">
-                  <th className="px-4 py-2">Name</th>
-                  <th className="px-4 py-2">Email</th>
-                  <th className="px-4 py-2">Date Joined</th>
-                  <th className="px-4 py-2 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedUsers.map((user, index) => (
-                  <tr
-                    key={index}
-                    className="bg-white/70 hover:bg-white/90 rounded-xl text-[#2F4F2F] shadow-sm"
-                  >
-                    <td className="px-4 py-3 font-medium">{user.full_name}</td>
-                    <td className="px-4 py-3">{user.email}</td>
-                    <td className="px-4 py-3">{formatDate(user.date_joined)}</td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        className="bg-red-400 hover:bg-red-500 text-white p-2 rounded-full transition"
-                        onClick={() => setDeleteUserId(user.id)}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {sortedUsers.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="text-center text-[#2F4F2F] py-6 italic">
-                      No user accounts found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+    {/* Users Table */}
+<div className="bg-[#d6e3c6] p-6 rounded-2xl shadow-sm">
+  <h2 className="text-[#2F4F2F] text-xl font-bold mb-4">
+    USER ACCOUNTS
+  </h2>
+
+  <div className="overflow-x-auto">
+    <table className="w-full border-separate border-spacing-y-3">
+      <thead>
+        <tr className="text-[#2F4F2F] text-sm font-semibold">
+          <th className="px-6 py-2 text-left">Name</th>
+          <th className="px-6 py-2 text-left">Email</th>
+          <th className="px-6 py-2 text-left">Address</th>
+          <th className="px-6 py-2 text-left">Date Joined</th>
+          <th className="px-6 py-2 text-center">Action</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {sortedUsers.map((user, index) => (
+          <tr
+            key={index}
+            className="bg-[#e1f0d1] text-[#2F4F2F] rounded-xl shadow-sm"
+          >
+            {/* Name */}
+            <td className="px-6 py-4 font-medium rounded-l-xl">
+              {user.full_name}
+            </td>
+
+            {/* Email */}
+            <td className="px-6 py-4">
+              {user.email}
+            </td>
+
+            {/* Address (city from backend) */}
+            <td className="px-6 py-4">
+              {user.address || "—"}
+            </td>
+
+            {/* Date Joined */}
+            <td className="px-6 py-4">
+              {formatDate(user.date_joined)}
+            </td>
+
+            {/* Action */}
+            <td className="px-6 py-4 text-center rounded-r-xl">
+              <button
+                className="bg-red-400 hover:bg-red-500 text-white p-2 rounded-full transition"
+                onClick={() => setDeleteUserId(user.id)}
+              >
+                <Trash2 size={16} />
+              </button>
+            </td>
+          </tr>
+        ))}
+
+        {sortedUsers.length === 0 && (
+          <tr>
+            <td
+              colSpan={5}
+              className="bg-[#e1f0d1] text-center text-[#2F4F2F] py-6 italic rounded-xl"
+            >
+              No user accounts found.
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+</div>
+
           </div>
         </section>
 

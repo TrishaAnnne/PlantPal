@@ -24,11 +24,18 @@ import random
 import uuid
 from datetime import datetime, timedelta
 
-import base64
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Disable GPU
+import torch
+
+
+
+"""import base64
 import io
 from PIL import Image
-import torch
-from torchvision import transforms
+from torchvision import transforms"""
+
+
 # --------------------------------------------------------------------
 # Address search
 # --------------------------------------------------------------------
@@ -1123,47 +1130,59 @@ def scan_plant(request):
     except Exception as e:
         print("⚠️ Error in scan_plant:", traceback.format_exc())
         return Response({"error": str(e)}, status=500)
-    
 
-# GET USERS (for Admin Dashboard, no JWT required for testing)
-# --------------------------------------------------------------------
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def get_users(request):
     """
-    Fetch all registered users safely from Supabase.
+    Fetch all registered users.
+    Maps profiles.city → address for frontend.
     """
     try:
         print("Fetching users from Supabase...")
 
         response = supabase.table("users").select(
-            "id, user_name, user_email, created_at"
+            """
+            id,
+            user_name,
+            user_email,
+            created_at,
+            profiles (
+                city
+            )
+            """
         ).execute()
 
-        # No response.error in supabase-py v2
-        users = response.data  # This will be None if nothing found
+        users = response.data
 
-        if users is None:
+        if not users:
             return Response([], status=200)
 
-        # Map keys for frontend
-        formatted_users = [
-            {
+        formatted_users = []
+        for u in users:
+            profile = u.get("profiles")
+
+            formatted_users.append({
                 "id": u.get("id"),
                 "full_name": u.get("user_name", "Unknown"),
                 "email": u.get("user_email", ""),
                 "date_joined": u.get("created_at", ""),
-            }
-            for u in users
-        ]
+                # 👇 map city → address
+                "address": profile.get("city") if profile else None,
+            })
 
-        print(f"Returning {len(formatted_users)} users")
         return Response(formatted_users, status=200)
 
     except Exception as e:
         import traceback
         print("❌ Exception in get_users:", traceback.format_exc())
-        return Response({"error": f"Server error: {str(e)}"}, status=500)
+        return Response(
+            {"error": f"Server error: {str(e)}"},
+            status=500
+        )
+
 
 @api_view(["DELETE"])
 @permission_classes([AllowAny])  # replace with custom admin check later
