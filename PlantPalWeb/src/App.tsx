@@ -5,6 +5,9 @@ import Signup from "./pages/Signup";
 import AdminLayout from "./layouts/AdminLayout";
 import Dashboard from "./pages/Dashboard";
 import PlantDatabase from "./pages/PlantDatabase";
+import TermsAndConditions from "./pages/TermsAndConditions";
+import UsersAccount from "./pages/UsersAccount"; 
+import Feedbacks from "./pages/Feedbacks";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 
 function PrivateRoute({ children }: { children: React.ReactElement }) {
@@ -15,7 +18,9 @@ function PrivateRoute({ children }: { children: React.ReactElement }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-100">
-        <p className="text-lg font-semibold text-gray-600">Loading session...</p>
+        <p className="text-lg font-semibold text-gray-600">
+          Loading session...
+        </p>
       </div>
     );
   }
@@ -26,8 +31,6 @@ function PrivateRoute({ children }: { children: React.ReactElement }) {
   return children;
 }
 
-
-// ✅ App root
 export default function App() {
   return (
     <AuthProvider>
@@ -52,6 +55,9 @@ export default function App() {
             {/* Nested routes inside AdminLayout */}
             <Route index element={<Dashboard />} />
             <Route path="plant-database" element={<PlantDatabase />} />
+            <Route path="terms-conditions" element={<TermsAndConditions />} />
+            <Route path="users-account" element={<UsersAccount />} /> 
+            <Route path="feedbacks" element={<Feedbacks />} />
           </Route>
 
           {/* Fallback for any unknown route */}

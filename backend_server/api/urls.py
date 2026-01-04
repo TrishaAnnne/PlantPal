@@ -16,10 +16,22 @@ urlpatterns = [
     path("add_plant/", views.add_plant, name="add_plant"),
     path("get_plants/", views.get_plants, name="get_plants"),
     path("search_plants/", views.search_plants, name="search_plants"),
-    path("api/scan-plant/", views.scan_plant, name="scan_plant"),
+    # path("predict_plant/", views.predict_plant, name="predict_plant"),
     path("get_search_history/", views.get_search_history, name="get_search_history"),  
     path("update_plant/<uuid:plant_id>/", views.update_plant, name="update_plant"),
     path("delete_plant/<uuid:plant_id>/", views.delete_plant, name="delete_plant"),
+
+    # Terms & Conditions Management
+    path("add_terms_conditions/", views.add_terms_conditions, name="add_terms_conditions"),
+    path("get_terms_conditions/", views.get_terms_conditions, name="get_terms_conditions"),
+    path("update-admin-profile/", views.update_admin_profile, name='update-admin-profile'),
+    path("get_latest_terms_conditions/", views.get_latest_terms_conditions, name="get_latest_terms_conditions"),
+
+    #User Managemen Admin  
+    path("get_users/", views.get_users, name="get_users"),
+    path("delete_user/<str:user_id>/", views.delete_user, name="delete_user"),
+    
+    
 
 
 

@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Mail } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { useAuth } from "../contexts/AuthContext"; // ✅ import context
+import { useAuth } from "../contexts/AuthContext";
 import deerBg from "../assets/deer-bg.jpg";
 import plantpalTitle from "../assets/plantpal-title.png";
 import backgroundBox from "../assets/background.png";
 
-export default function Login() {
+export default function AdminLogin() {
   const navigate = useNavigate();
   const { setAdmin, admin } = useAuth();
 
@@ -17,69 +17,67 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // ✅ Redirect automatically if already logged in
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const API_BASE = "http://127.0.0.1:8000/api/";
+
+  // Redirect if already logged in
   useEffect(() => {
     if (admin) {
       navigate("/dashboard", { replace: true });
     }
   }, [admin, navigate]);
 
-  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
   e.preventDefault();
   setLoading(true);
 
   try {
-    const res = await fetch("http://127.0.0.1:8000/api/admin_login/", {
+    const res = await fetch(`${API_BASE}admin_login/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
 
     const data = await res.json();
-    console.log("📤 Sent:", { email, password });
-    console.log("📥 Raw response:", res);
-    console.log("📦 Response data:", data);
 
     if (!res.ok) {
-      toast.error(data.error || "Invalid credentials");
+      setErrorMessage(data.error || "Invalid email or password");
+      setShowErrorModal(true);
       return;
     }
 
     const adminData = data.admin;
-    const accessToken = data.access;   // make sure backend sends this
-    const refreshToken = data.refresh; // make sure backend sends this
+    const accessToken = data.access;
+    const refreshToken = data.refresh;
 
     if (!adminData || !accessToken || !refreshToken) {
-      toast.error("Unexpected server response");
+      toast.error("Unexpected server response", { duration: 3000, position: "top-right" });
       return;
     }
 
-    // ✅ Save admin + tokens to context
     setAdmin(adminData, accessToken, refreshToken);
 
-    // ✅ Log tokens for verification
-    console.log("🔑 Access Token:", accessToken);
-    console.log("🔄 Refresh Token:", refreshToken);
+    // ✅ Welcome toast with 3 seconds duration
+    toast.success(`Welcome ${adminData.user_name || adminData.email}!`, {
+      duration: 3000,
+      position: "top-right",
+    });
 
-    toast.success(`Welcome ${adminData.user_name || adminData.email}!`);
-
-    // ✅ Redirect to dashboard (useEffect will also handle auto-redirect if admin exists)
     navigate("/dashboard", { replace: true });
-
   } catch (err) {
     console.error("⚠️ Login error:", err);
-    toast.error("Network error. Please try again.");
+    setErrorMessage("Network error. Please try again.");
+    setShowErrorModal(true);
   } finally {
     setLoading(false);
   }
 };
 
 
-
-
-
   return (
-    <div className="relative h-screen w-screen overflow-hidden flex items-center justify-center">
+    <div className="relative h-screen w-screen flex items-center justify-center overflow-hidden">
       {/* Background */}
       <div
         className="absolute inset-0 bg-cover bg-center"
@@ -103,13 +101,12 @@ export default function Login() {
         />
 
         <h2 className="text-2xl font-bold text-[#2F4F2F] text-center mb-1">
-          Welcome back!
+          Admin Login!
         </h2>
         <p className="text-base text-gray-700 text-center mb-6">
-          Sign in to your PlantPal account
+          Sign in to your admin account
         </p>
 
-        {/* Form */}
         <form onSubmit={handleLogin} className="space-y-5">
           {/* Email */}
           <div className="flex items-center bg-[#e1e9d7] rounded-[50px] px-3.5 py-2 w-full mb-4">
@@ -121,7 +118,7 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               required
             />
-            <div className="flex-shrink-0 ml-2 w-10 h-10 rounded-full bg-[#faffef] flex items-center justify-center">
+            <div className="flex-shrink-0 ml-2 w-10 h-10 rounded-full bg-[#faffef] flex items-center justify-center shadow-sm">
               <Mail className="text-gray-600" size={20} />
             </div>
           </div>
@@ -139,59 +136,52 @@ export default function Login() {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="flex-shrink-0 ml-2 w-10 h-10 rounded-full bg-[#faffef] flex items-center justify-center hover:bg-gray-200 transition"
+              className="flex-shrink-0 ml-2 w-10 h-10 rounded-full bg-[#faffef] flex items-center justify-center shadow-sm"
             >
-              {showPassword ? (
-                <EyeOff className="text-gray-600" size={20} />
-              ) : (
-                <Eye className="text-gray-600" size={20} />
-              )}
+              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
 
-          {/* Remember Me + Forgot Password */}
-          <div className="flex items-center justify-between text-sm">
-            <label className="flex items-center gap-2 cursor-pointer text-[#333]">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-                className="w-5 h-5 accent-green-600"
-              />
-              Remember Me
-            </label>
-            <button
-              type="button"
-              className="text-[#579755] hover:underline"
-              onClick={() => alert("Forgot password flow")}
-            >
-              Forgot Password?
-            </button>
-          </div>
+          {/* Remember Me */}
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="w-5 h-5 accent-green-600"
+            />
+            Remember Me
+          </label>
 
           {/* Submit Button */}
           <button
             type="submit"
-            className="w-full bg-[#3B6E3B] text-white rounded-[20px] py-3 flex justify-center font-semibold hover:bg-[#2E5C2E] active:bg-[#1F401F] transition disabled:opacity-50"
+            className="w-full bg-[#3B6E3B] text-white rounded-[20px] py-3 font-semibold hover:bg-[#2E5C2E]"
             disabled={loading}
           >
             {loading ? "Logging in..." : "Login"}
           </button>
         </form>
-
-        {/* Sign Up link */}
-        <div className="mt-6 text-center text-sm text-gray-600">
-          <p>
-            Don&apos;t have an account?{" "}
-            <button
-              className="text-[#579755] font-medium hover:underline"
-              onClick={() => navigate("/signup")}
-            >
-              Sign Up
-            </button>
-          </p>
-        </div>
       </div>
+
+      {/* Error Modal */}
+      {showErrorModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl shadow-lg w-80 text-center">
+            <h3 className="text-lg font-semibold text-red-600 mb-3">
+              Login Failed
+            </h3>
+            <p className="text-gray-700 mb-4">{errorMessage}</p>
+
+            <button
+              onClick={() => setShowErrorModal(false)}
+              className="w-full bg-[#3B6E3B] text-white py-2 rounded-lg hover:bg-[#2E5C2E]"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
