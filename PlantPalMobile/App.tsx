@@ -6,29 +6,33 @@ import {
   View,
 } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack"; 
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+
 import SplashScreen from "./pages/SplashScreen";
 import LoginPage from "./pages/Login";
-import ScanPage from "./pages/ScanPage";
 import SignUp from "./pages/SignUp";
+import MainTab from "./pages/MainTab";
 import Profile from "./pages/Profile";
 import EditProfile from "./pages/EditProfile";
-import SearchPage from "./pages/SearchPage"; 
+import Settings from "./pages/Settings";
+import PlantDetails from "./pages/PlantDetails";
 
 import { AuthProvider, useAuth } from "./src/contexts/AuthContext";
 
 export type RootStackParamList = {
   Login: undefined;
-  Scan: undefined;
   SignUp: undefined;
+  Main: undefined;
   Profile: undefined;
   EditProfile: undefined;
-  Search: undefined; // ✅ Added
+  Settings: undefined;
+  PlantDetails: {
+    plantId: string;
+  };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// ✅ Navigation depending on auth state
 function AppNavigator() {
   const { user, loading } = useAuth();
 
@@ -44,19 +48,44 @@ function AppNavigator() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        animation: "slide_from_right", // 🎞️ Native-stack built-in transition
+        animation: "slide_from_right",
       }}
     >
       {user ? (
         <>
-          <Stack.Screen name="Scan" component={ScanPage} />
-          <Stack.Screen name="Profile" component={Profile} />
-          <Stack.Screen name="EditProfile" component={EditProfile} />
+          {/* Main Tab Navigator (Search, Scan, Journal) */}
+          <Stack.Screen name="Main" component={MainTab} />
 
-          {/* ✅ SearchPage with native slide transition */}
+          {/* Plant Details (opened from Search results) */}
           <Stack.Screen
-            name="Search"
-            component={SearchPage}
+            name="PlantDetails"
+            component={PlantDetails}
+            options={{
+              animation: "slide_from_right",
+              gestureEnabled: true,
+            }}
+          />
+
+          {/* Profile screens */}
+          <Stack.Screen
+            name="Profile"
+            component={Profile}
+            options={{
+              animation: "slide_from_right",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="EditProfile"
+            component={EditProfile}
+            options={{
+              animation: "slide_from_right",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="Settings"
+            component={Settings}
             options={{
               animation: "slide_from_right",
               gestureEnabled: true,
@@ -65,6 +94,7 @@ function AppNavigator() {
         </>
       ) : (
         <>
+          {/* Auth screens */}
           <Stack.Screen name="Login" component={LoginPage} />
           <Stack.Screen name="SignUp" component={SignUp} />
         </>

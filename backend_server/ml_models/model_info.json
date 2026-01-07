@@ -1,0 +1,20 @@
+{
+  "model_architecture": "ResNet18",
+  "num_classes": 7,
+  "class_names": [
+    "blumea_balsamifera",
+    "coleus_scutellarioides",
+    "mentha_cordifolia",
+    "origanum_vulgare",
+    "phyllanthus_niruri",
+    "senna_alata",
+    "vitex_negundo"
+  ],
+  "image_size": 224,
+  "best_val_accuracy": 98.83720930232558,
+  "total_train_images": 682,
+  "total_val_images": 172,
+  "training_epochs": 25,
+  "batch_size": 16,
+  "learning_rate": 0.001
+}
