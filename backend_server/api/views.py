@@ -1,40 +1,56 @@
+# ================================
 # Django & DRF
+# ================================
 from django.conf import settings
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.views.decorators.csrf import csrf_exempt
 from rest_framework.response import Response
 from rest_framework import status
-import json
 
-# JWT & SimpleJWT
-import jwt
-from rest_framework_simplejwt.tokens import RefreshToken,AccessToken
+# ================================
+# JWT / Authentication
+# ================================
+from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
+import jwt
 
+# ================================
 # Utilities
+# ================================
 from .utils import hash_password_sha256, verify_jwt_token
 
-# External / other libraries
+# ================================
+# External Services
+# ================================
 from supabaseclient import supabase
 import requests
-import traceback
-import random
+
+# ================================
+# Standard Library
+# ================================
+import json
 import uuid
+import random
+import traceback
 from datetime import datetime, timedelta
-
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Disable GPU
-import torch
-
-
-
-"""import base64
+import base64
 import io
-from PIL import Image
-from torchvision import transforms"""
 
+# ================================
+# Image Processing & ML
+# ================================
+from PIL import Image
+import torch
+from torchvision import transforms
+# ================================
+from .ml_service import plant_identifier
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------
 # Address search
@@ -141,6 +157,8 @@ def signup(request):
 # --------------------------------------------------------------------
 # Login
 # --------------------------------------------------------------------
+from rest_framework_simplejwt.tokens import RefreshToken
+
 @api_view(['POST'])
 def login(request):
     try:
@@ -168,12 +186,19 @@ def login(request):
             return Response({"error": "Invalid email or password"},
                             status=status.HTTP_401_UNAUTHORIZED)
 
-        refresh = RefreshToken.for_user(type("User", (), {"id": email}))
-
+        # ✅ Create a proper user object with the Supabase user ID
+        user_id = result.data["id"]
+        
+        # Create token with user_id as the identifier
+        refresh = RefreshToken()
+        refresh['user_id'] = user_id  # Use Supabase user ID
+        refresh['email'] = email
+        
         return Response(
             {
                 "message": "Login successful!",
                 "user": {
+                    "id": user_id,
                     "email": email,
                     "username": result.data["user_name"]
                 },
@@ -188,6 +213,110 @@ def login(request):
     except Exception as e:
         print(traceback.format_exc())
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def google_login(request):
+    """
+    Handle Google OAuth login
+    Expects: email, google_id, name
+    Returns: user data and JWT tokens
+    """
+    try:
+        email = request.data.get('email', '').strip().lower()
+        google_id = request.data.get('google_id', '').strip()
+        name = request.data.get('name', '').strip()
+        
+        if not email or not google_id:
+            return Response(
+                {'error': 'Email and Google ID are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if user exists by email
+        result = (
+            supabase.table("users")
+            .select("*")
+            .eq("user_email", email)
+            .execute()
+        )
+        
+        if result.data and len(result.data) > 0:
+            # User exists - get their info
+            user = result.data[0]
+            user_id = user["id"]
+            username = user["user_name"]
+            
+            # Update google_id if not set (optional - requires google_id column)
+            if "google_id" in user and not user.get("google_id"):
+                supabase.table("users").update(
+                    {"google_id": google_id}
+                ).eq("user_email", email).execute()
+        else:
+            # Create new user for Google login
+            # Generate unique username from email
+            base_username = email.split('@')[0]
+            username = base_username
+            counter = 1
+            
+            # Ensure username is unique
+            while True:
+                check = supabase.table("users").select("id").eq("user_name", username).execute()
+                if not check.data or len(check.data) == 0:
+                    break
+                username = f"{base_username}{counter}"
+                counter += 1
+            
+            # Create new user
+            # Note: user_password is required in your schema, so we use a placeholder
+            new_user = (
+                supabase.table("users")
+                .insert({
+                    "user_email": email,
+                    "user_name": username,
+                    "user_password": f"google_oauth_{google_id}",  # Placeholder
+                    "google_id": google_id  # Only if you added this column
+                })
+                .execute()
+            )
+            
+            if not new_user.data or len(new_user.data) == 0:
+                return Response(
+                    {'error': 'Failed to create user'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            user = new_user.data[0]
+            user_id = user["id"]
+        
+        # Generate JWT tokens (same as regular login)
+        refresh = RefreshToken()
+        refresh['user_id'] = user_id
+        refresh['email'] = email
+        
+        return Response(
+            {
+                "message": "Google login successful!",
+                "user": {
+                    "id": user_id,
+                    "email": email,
+                    "username": username
+                },
+                "tokens": {
+                    "refresh": str(refresh),
+                    "access": str(refresh.access_token),
+                }
+            },
+            status=status.HTTP_200_OK
+        )
+        
+    except Exception as e:
+        print(traceback.format_exc())
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 # --------------------------------------------------------------------
 # Create profile (if you still want this separate)
@@ -288,64 +417,153 @@ def profile(request):
 # --------------------------------------------------------------------
 @api_view(["PUT"])
 def update_profile(request):
-   
     """
     Updates a user's profile.
-    If a profile row doesn't exist yet, it will be created.
-    Also updates users.user_name if supplied.
+    Creates profile row if it does not exist.
+    Updates users.user_name if provided.
     """
     try:
-        email   = request.data.get("email", "").strip().lower()
-        updates = request.data.get("updates", {})
+        email = request.data.get("email")
+        updates = request.data.get("updates")
 
+        # --- validation ---
         if not email:
-            return Response({"error": "Email required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Email is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # --- find user id ---
-        user = (
+        if not isinstance(updates, dict):
+            return Response(
+                {"error": "`updates` must be an object"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        email = email.strip().lower()
+
+        # --- find user ---
+        user_res = (
             supabase.table("users")
-            .select("id")
+            .select("id, user_name")
             .eq("user_email", email)
             .single()
             .execute()
         )
-        if not user.data:
-            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        user_id = user.data["id"]
+        if not user_res.data:
+            return Response(
+                {"error": "User not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        # --- update username in users table if requested ---
+        user_id = user_res.data["id"]
+
+        # --- update username (if provided) ---
         if "user_name" in updates:
-            new_username = updates.pop("user_name").strip()
+            new_username = updates.pop("user_name")
+
+            if not new_username or not new_username.strip():
+                return Response(
+                    {"error": "Username cannot be empty"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            new_username = new_username.strip()
+
+            # check if username is taken by ANOTHER user
             taken = (
                 supabase.table("users")
                 .select("id")
                 .eq("user_name", new_username)
+                .neq("id", user_id)
                 .execute()
             )
-            if taken.data:
-                return Response({"error": "Username already taken"},
-                                status=status.HTTP_400_BAD_REQUEST)
-            supabase.table("users").update({"user_name": new_username}).eq("id", user_id).execute()
 
-        # --- upsert profile row ---
+            if taken.data:
+                return Response(
+                    {"error": "Username already taken"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            supabase.table("users") \
+                .update({"user_name": new_username}) \
+                .eq("id", user_id) \
+                .execute()
+
+        # --- upsert profile ---
         if updates:
             updates["updated_at"] = datetime.utcnow().isoformat()
 
-            # UPSERT ensures insert if row doesn't exist
-            supabase.table("profiles").upsert({
-                "user_id": user_id,
-                **updates
-            }, on_conflict=["user_id"]).execute()
+            supabase.table("profiles").upsert(
+                {
+                    "user_id": user_id,
+                    **updates
+                },
+                on_conflict=["user_id"]
+            ).execute()
 
         return Response(
-            {"message": "Profile updated successfully!", "updates": updates},
+            {
+                "message": "Profile updated successfully",
+                "updates": updates
+            },
             status=status.HTTP_200_OK
         )
 
     except Exception as e:
         print(traceback.format_exc())
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"error": "Internal server error"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+@api_view(["POST"])
+def subscribe_premium(request):
+    email = request.data.get("email")
+
+    if not email:
+        return Response({"error": "Email is required"}, status=400)
+
+    try:
+        # 1️⃣ Get user
+        user_resp = (
+            supabase.table("users")
+            .select("id")
+            .eq("user_email", email.lower())
+            .single()
+            .execute()
+        )
+
+        if not user_resp.data:
+            return Response({"error": "User not found"}, status=404)
+
+        user_id = user_resp.data["id"]
+
+        # 2️⃣ Update profile
+        supabase.table("profiles").upsert(
+            {
+                "user_id": user_id,
+                "is_premium": True,
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+            on_conflict=["user_id"],
+        ).execute()
+
+        # 3️⃣ Record payment
+        supabase.table("subscription_payment_information").insert(
+            {
+                "user_id": user_id,
+                "amount": 199.00,
+                "currency": "PHP",
+                "payment_status": "paid",
+                "sub_status": "active",
+                "payment_method": "mock",
+            }
+        ).execute()
+
+        return Response({"message": "Premium activated"}, status=200)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
 
 # --------------------------------------------------------------------
 # Admin Sign-up (for PlantPal Web)
@@ -1086,97 +1304,18 @@ def update_admin_profile(request):
 
 
 
-    
-
-@api_view(["POST"])
-def scan_plant(request):
-    try:
-        # 1️⃣ Verify JWT
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return Response({"error": "No valid authorization header"}, status=401)
-        
-        token_string = auth_header.split(" ")[1]
-        try:
-            access_token = AccessToken(token_string)
-            user_id = access_token.get("user_id")
-            if not user_id:
-                return Response({"error": "User ID not found in token"}, status=401)
-        except Exception as token_error:
-            return Response({"error": f"Invalid token: {str(token_error)}"}, status=401)
-        
-        # 2️⃣ Get base64 image
-        image_base64 = request.data.get("imageBase64")
-        if not image_base64:
-            return Response({"error": "No image provided"}, status=400)
-        
-        image_data = base64.b64decode(image_base64)
-        image = Image.open(io.BytesIO(image_data)).convert("RGB")
-        
-        # 3️⃣ Preprocess image
-        transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
-        ])
-        input_tensor = transform(image).unsqueeze(0)  # batch of 1
-        
-        # 4️⃣ Load model
-        model = torch.load("models/plant_classifier.pth", map_location=torch.device("cpu"))
-        model.eval()
-        
-        # 5️⃣ Predict
-        with torch.no_grad():
-            outputs = model(input_tensor)
-            _, predicted = torch.max(outputs, 1)
-        
-        # You need a mapping from class index to plant name
-        class_to_name = {
-            0: "Tarragon",
-            1: "Peppermint",
-            2: "Chocomint",
-            # add all classes here...
-        }
-        plant_name = class_to_name.get(predicted.item(), "Unknown")
-        
-        # 6️⃣ Insert into Supabase
-        scan_data = {
-            "plant_name": plant_name,
-            "user_id": str(user_id),
-            "scanned_at": request.data.get("scanned_at") or datetime.utcnow().isoformat()
-        }
-        inserted = supabase.table("plants").insert(scan_data).execute()
-        plant_id = inserted.data[0]["id"] if inserted.data else None
-        
-        return Response({"plant_id": plant_id, "plant_name": plant_name}, status=201)
-    
-    except Exception as e:
-        print("⚠️ Error in scan_plant:", traceback.format_exc())
-        return Response({"error": str(e)}, status=500)
-
-
-
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def get_users(request):
     """
-    Fetch all registered users.
-    Maps profiles.city → address for frontend.
+    Fetch all registered users with their profile information from Supabase.
     """
     try:
-        print("Fetching users from Supabase...")
+        print("Fetching users with profiles from Supabase...")
 
+        # Join users table with profiles table
         response = supabase.table("users").select(
-            """
-            id,
-            user_name,
-            user_email,
-            created_at,
-            profiles (
-                city
-            )
-            """
+            "id, user_name, user_email, created_at, profiles(city, avatar_url, is_premium)"
         ).execute()
 
         users = response.data
@@ -1184,29 +1323,40 @@ def get_users(request):
         if not users:
             return Response([], status=200)
 
+        # Map keys for frontend with profile data
         formatted_users = []
         for u in users:
+            # profiles is a dictionary or None (since it's a 1-to-1 relationship)
             profile = u.get("profiles")
-
-            formatted_users.append({
+            
+            user_data = {
                 "id": u.get("id"),
                 "full_name": u.get("user_name", "Unknown"),
                 "email": u.get("user_email", ""),
                 "date_joined": u.get("created_at", ""),
-                # 👇 map city → address
-                "address": profile.get("city") if profile else None,
-            })
+                "user_name": u.get("user_name", "Unknown"),
+                "user_email": u.get("user_email", ""),
+                "city": None,
+                "avatar_url": None,
+                "is_premium": False,
+            }
+            
+            # Extract profile data if it exists
+            if profile and isinstance(profile, dict):
+                user_data["city"] = profile.get("city")
+                user_data["avatar_url"] = profile.get("avatar_url")
+                user_data["is_premium"] = profile.get("is_premium", False)
+            
+            formatted_users.append(user_data)
 
+        print(f"Returning {len(formatted_users)} users with profile data")
         return Response(formatted_users, status=200)
 
     except Exception as e:
         import traceback
         print("❌ Exception in get_users:", traceback.format_exc())
-        return Response(
-            {"error": f"Server error: {str(e)}"},
-            status=500
-        )
-
+        return Response({"error": f"Server error: {str(e)}"}, status=500)
+    
 
 @api_view(["DELETE"])
 @permission_classes([AllowAny])  # replace with custom admin check later
@@ -1249,4 +1399,670 @@ def get_latest_terms_conditions(request):
 
     except Exception as e:
         print(traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+    
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_all_plants(request):
+    """
+    Get all plants from database for matching with ML predictions
+    """
+    try:
+        # Import your Plant model (adjust the import based on your model name)
+        from .models import Plant  # or HerbalPlant, or whatever your model is called
+        
+        plants = Plant.objects.all()
+        plants_data = []
+        
+        for plant in plants:
+            plant_dict = {
+                'id': str(plant.id),
+                'plant_name': plant.plant_name,
+                'scientific_name': plant.scientific_name,
+                'common_names': plant.common_names if hasattr(plant, 'common_names') else [],
+                'origin': plant.origin if hasattr(plant, 'origin') else '',
+                'ailments': plant.ailments if hasattr(plant, 'ailments') else {},
+            }
+            
+            # Handle image field
+            if hasattr(plant, 'image') and plant.image:
+                plant_dict['image'] = request.build_absolute_uri(plant.image.url)
+            
+            # Handle images array field
+            if hasattr(plant, 'images') and plant.images:
+                if isinstance(plant.images, list):
+                    plant_dict['images'] = [request.build_absolute_uri(img) if not img.startswith('http') else img for img in plant.images]
+                else:
+                    plant_dict['images'] = []
+            else:
+                plant_dict['images'] = []
+            
+            plants_data.append(plant_dict)
+        
+        logger.info(f"Returning {len(plants_data)} plants from database")
+        return Response(plants_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in get_all_plants: {str(e)}")
+        return Response(
+            {'error': f'Failed to fetch plants: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST']) 
+def scan_plant(request):
+    try:
+        # Get data from request
+        image_base64 = request.data.get('imageBase64')
+        scanned_at = request.data.get('scanned_at')
+        
+        if not image_base64:
+            return Response(
+                {'error': 'No image data provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Perform ML prediction
+        user_id = request.user.id if request.user.is_authenticated else None
+        logger.info(f"🔍 Processing plant scan for user {user_id}")
+        prediction = plant_identifier.predict_from_base64(image_base64)
+        
+        # Save scan record to database (even for unknown/error)
+        scan_record = {
+            'user_id': str(user_id) if user_id else None,
+            'plant_name': prediction.get('plant_name', 'Unknown'),
+            'scientific_name': prediction.get('scientific_name', ''),
+            'confidence': prediction.get('confidence', 0),
+            'status': prediction.get('status', 'error'),
+            'scanned_at': scanned_at or datetime.now().isoformat()
+        }
+        
+        try:
+            supabase.table('scan_history').insert(scan_record).execute()
+            logger.info(f"✅ Scan record saved for user {user_id}")
+        except Exception as db_error:
+            logger.error(f"Failed to save scan record: {str(db_error)}")
+            # Continue even if saving fails
+        
+        # Handle unknown/error cases early
+        if prediction['status'] == 'unknown' or prediction['status'] == 'error':
+            prediction['scanned_at'] = scanned_at
+            prediction['user_id'] = str(user_id) if user_id else 'Anonymous'
+            return Response(prediction, status=status.HTTP_200_OK)
+        
+        # Fetch all plants from database with images and ailments
+        logger.info("📚 Fetching plants from database...")
+        plants_response = supabase.table("plants").select("*").execute()
+        all_plants = plants_response.data or []
+        logger.info(f"📚 Found {len(all_plants)} plants in database")
+        
+        # Enrich each plant with images and ailments
+        for plant in all_plants:
+            plant_id = plant["id"]
+
+            # Fetch plant images
+            plant_images_resp = (
+                supabase.table("plant_images")
+                .select("image_url")
+                .eq("plant_id", plant_id)
+                .execute()
+            )
+            plant["images"] = [img["image_url"] for img in plant_images_resp.data]
+            plant["image"] = plant["images"][0] if plant["images"] else None
+
+            # Fetch ailments grouped by disease type
+            ailments_resp = (
+                supabase.table("plant_ailments")
+                .select("*")
+                .eq("plant_id", plant_id)
+                .execute()
+            )
+            
+            ailments = ailments_resp.data or []
+            
+            # Group ailments by disease_type
+            ailments_by_disease = {}
+            for ailment in ailments:
+                disease_type = ailment.get("disease_type", "Other")
+                if disease_type not in ailments_by_disease:
+                    ailments_by_disease[disease_type] = []
+                
+                ailments_by_disease[disease_type].append({
+                    "ailment": ailment.get("ailment"),
+                    "reference": ailment.get("reference"),
+                    "herbalBenefit": ailment.get("herbal_benefit"),
+                })
+            
+            plant["ailments"] = ailments_by_disease
+        
+        # ML folder name to scientific name mapping
+        # This maps your ML model's folder names to proper scientific names
+        ML_TO_SCIENTIFIC = {
+            'pandanus_amaryllifolius': 'Pandanus amaryllifolius',
+            'origanum_vulgare': 'Origanum vulgare',
+            'aloe_barbadensis': 'Aloe barbadensis',
+            'mentha_cordifolia': 'Mentha cordifolia',
+            'ocimum_basilicum': 'Ocimum basilicum',
+            'averrhoa_bilimbi': 'Averrhoa bilimbi',
+            'blumea_balsamifera': 'Blumea balsamifera',
+            'centella_asiatica': 'Centella asiatica',
+            'coleus_scutellarioides': 'Coleus scutellarioides',
+            'corchorus_olitorius': 'Corchorus olitorius',
+            'ehretia_microphylla': 'Ehretia microphylla',
+            'euphorbia_hirta': 'Euphorbia hirta',
+            'jatropha_curcas': 'Jatropha curcas',
+            'mangifera_indica': 'Mangifera indica',
+            'manihot_esculenta': 'Manihot esculenta',
+            'peperomia_pellucida': 'Peperomia pellucida',
+            'phyllanthus_niruri': 'Phyllanthus niruri',
+            'psidium_guajava': 'Psidium guajava',
+            'senna_alata': 'Senna alata',
+            'vitex_negundo': 'Vitex negundo',
+        }
+        
+        # Helper function to normalize names for comparison
+        def normalize_name(name):
+            if not name:
+                return ""
+            # Remove underscores, hyphens, extra spaces, and lowercase
+            normalized = name.lower().replace('_', ' ').replace('-', ' ')
+            # Remove multiple spaces
+            while '  ' in normalized:
+                normalized = normalized.replace('  ', ' ')
+            return normalized.strip()
+        
+        # Helper function to extract genus and species
+        def get_genus_species(scientific_name):
+            """Extract first two words (genus + species) from scientific name"""
+            if not scientific_name:
+                return None
+            parts = scientific_name.strip().split()
+            if len(parts) >= 2:
+                return f"{parts[0].lower()} {parts[1].lower()}"
+            return None
+        
+        # Match ML prediction with database
+        ml_plant_name = prediction['plant_name']  # e.g., "origanum_vulgare" or "pandanus_amaryllifolius"
+        ml_normalized = normalize_name(ml_plant_name)
+        
+        # Get the proper scientific name from mapping
+        ml_scientific = ML_TO_SCIENTIFIC.get(ml_plant_name.lower())
+        ml_scientific_normalized = normalize_name(ml_scientific) if ml_scientific else ml_normalized
+        
+        logger.info(f"🔍 Searching database for: '{ml_plant_name}' -> scientific: '{ml_scientific}'")
+        
+        matched_plant = None
+        
+        # Try multiple matching strategies
+        for plant in all_plants:
+            db_plant_name = normalize_name(plant['plant_name'])
+            db_scientific = normalize_name(plant.get('scientific_name', ''))
+            
+            # Strategy 1: Exact match with scientific_name using mapping
+            if ml_scientific and db_scientific == ml_scientific_normalized:
+                matched_plant = plant
+                logger.info(f"✅ Matched via mapped scientific_name: '{plant['plant_name']}'")
+                break
+            
+            # Strategy 2: Genus + species match (e.g., "pandanus amaryllifolius")
+            if ml_scientific:
+                ml_genus_species = get_genus_species(ml_scientific)
+                db_genus_species = get_genus_species(plant.get('scientific_name', ''))
+                
+                if ml_genus_species and db_genus_species and ml_genus_species == db_genus_species:
+                    matched_plant = plant
+                    logger.info(f"✅ Matched via genus+species: '{plant['plant_name']}'")
+                    break
+            
+            # Strategy 3: Exact match with scientific_name (original)
+            if db_scientific == ml_normalized:
+                matched_plant = plant
+                logger.info(f"✅ Matched via scientific_name: '{plant['plant_name']}'")
+                break
+            
+            # Strategy 4: Exact match with plant_name
+            if db_plant_name == ml_normalized:
+                matched_plant = plant
+                logger.info(f"✅ Matched via plant_name: '{plant['plant_name']}'")
+                break
+            
+            # Strategy 5: Check common_names array
+            if plant.get('common_names'):
+                for common_name in plant['common_names']:
+                    if normalize_name(common_name) == ml_normalized:
+                        matched_plant = plant
+                        logger.info(f"✅ Matched via common_name: '{plant['plant_name']}'")
+                        break
+                if matched_plant:
+                    break
+            
+            # Strategy 6: Partial word matching (for compound names)
+            ml_words = [w for w in ml_normalized.split() if len(w) > 3]
+            if ml_words:
+                # Check if all significant words appear in either scientific or common name
+                if all(word in db_scientific for word in ml_words):
+                    matched_plant = plant
+                    logger.info(f"✅ Matched via partial scientific_name: '{plant['plant_name']}'")
+                    break
+                elif all(word in db_plant_name for word in ml_words):
+                    matched_plant = plant
+                    logger.info(f"✅ Matched via partial plant_name: '{plant['plant_name']}'")
+                    break
+        
+        # Build response
+        if matched_plant:
+            # ✅ Use database plant name (e.g., "Lemongrass" instead of "pandanus_amaryllifolius")
+            response_data = {
+                'status': prediction['status'],
+                'plant_name': matched_plant['plant_name'],
+                'scientific_name': matched_plant['scientific_name'],
+                'confidence': prediction['confidence'],
+                'confidence_level': prediction['confidence_level'],
+                'warning': prediction.get('warning'),
+                'plant_data': matched_plant,
+                'source': 'database',
+                'scanned_at': scanned_at,
+                'user_id': str(user_id) if user_id else 'Anonymous'
+            }
+            logger.info(f"✅ Returning matched plant: '{matched_plant['plant_name']}' (was '{ml_plant_name}')")
+        else:
+            # No match in database - use mapped scientific name or formatted ML prediction
+            logger.warning(f"⚠️ No database match for '{ml_plant_name}'")
+            formatted_name = ml_plant_name.replace('_', ' ').title()
+            display_scientific = ml_scientific if ml_scientific else ml_plant_name.replace('_', ' ').capitalize()
+            
+            response_data = {
+                'status': prediction['status'],
+                'plant_name': formatted_name,
+                'scientific_name': display_scientific,
+                'confidence': prediction['confidence'],
+                'confidence_level': prediction['confidence_level'],
+                'warning': prediction.get('warning'),
+                'plant_data': None,
+                'source': 'ml_only',
+                'message': 'Plant identified but not found in database',
+                'scanned_at': scanned_at,
+                'user_id': str(user_id) if user_id else 'Anonymous'
+            }
+        
+        # Process top predictions with database matching
+        if 'top_predictions' in prediction:
+            enriched_predictions = []
+            
+            for pred in prediction['top_predictions']:
+                pred_name = pred['plant_name']
+                pred_normalized = normalize_name(pred_name)
+                
+                # Get mapped scientific name
+                pred_scientific = ML_TO_SCIENTIFIC.get(pred_name.lower())
+                pred_scientific_normalized = normalize_name(pred_scientific) if pred_scientific else pred_normalized
+                
+                # Try to match each prediction with database
+                pred_match = None
+                for plant in all_plants:
+                    db_plant_name = normalize_name(plant['plant_name'])
+                    db_scientific = normalize_name(plant.get('scientific_name', ''))
+                    
+                    # Check mapped scientific name first
+                    if pred_scientific and db_scientific == pred_scientific_normalized:
+                        pred_match = plant
+                        break
+                    
+                    # Check genus + species
+                    if pred_scientific:
+                        pred_genus_species = get_genus_species(pred_scientific)
+                        db_genus_species = get_genus_species(plant.get('scientific_name', ''))
+                        if pred_genus_species and db_genus_species and pred_genus_species == db_genus_species:
+                            pred_match = plant
+                            break
+                    
+                    if (db_scientific == pred_normalized or 
+                        db_plant_name == pred_normalized):
+                        pred_match = plant
+                        break
+                    
+                    # Check common names
+                    if plant.get('common_names'):
+                        for common_name in plant['common_names']:
+                            if normalize_name(common_name) == pred_normalized:
+                                pred_match = plant
+                                break
+                        if pred_match:
+                            break
+                
+                if pred_match:
+                    enriched_predictions.append({
+                        'plant_name': pred_match['plant_name'],
+                        'scientific_name': pred_match['scientific_name'],
+                        'confidence': pred['confidence'],
+                        'image_url': pred_match.get('image'),
+                        'plant_data': pred_match
+                    })
+                else:
+                    # No database match - use formatted ML name
+                    formatted_name = pred_name.replace('_', ' ').title()
+                    display_scientific = pred_scientific if pred_scientific else pred_name.replace('_', ' ').capitalize()
+                    enriched_predictions.append({
+                        'plant_name': formatted_name,
+                        'scientific_name': display_scientific,
+                        'confidence': pred['confidence'],
+                        'image_url': None,
+                        'plant_data': None
+                    })
+            
+            response_data['top_predictions'] = enriched_predictions
+        
+        # Update scan_history with matched plant info
+        try:
+            supabase.table('scan_history').update({
+                'plant_name': response_data['plant_name'],
+                'scientific_name': response_data['scientific_name']
+            }).eq('user_id', str(user_id)).eq('scanned_at', scanned_at).execute()
+        except Exception as update_error:
+            logger.error(f"Failed to update scan record: {str(update_error)}")
+        
+        logger.info(f"✅ Scan complete: {response_data['plant_name']} ({response_data['confidence']:.2f}%)")
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in scan_plant: {str(e)}", exc_info=True)
+        return Response(
+            {'error': f'Failed to process image: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+@api_view(['POST'])
+def scan_plant_with_file(request):
+    """
+    Alternative endpoint for file upload instead of base64
+    
+    Use this if you want to send the image as a file upload
+    """
+    try:
+        image_file = request.FILES.get('image')
+        
+        if not image_file:
+            return Response(
+                {'error': 'No image file provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Perform prediction
+        user_id = request.user.id if request.user.is_authenticated else None
+        prediction = plant_identifier.predict_from_file(image_file)
+        
+        # Save scan record
+        scan_record = {
+            'user_id': str(user_id) if user_id else None,
+            'plant_name': prediction.get('plant_name', 'Unknown'),
+            'scientific_name': prediction.get('scientific_name', ''),
+            'confidence': prediction.get('confidence', 0),
+            'status': prediction.get('status', 'error'),
+            'scanned_at': datetime.now().isoformat()
+        }
+        
+        try:
+            supabase.table('scan_history').insert(scan_record).execute()
+        except Exception as db_error:
+            logger.error(f"Failed to save scan record: {str(db_error)}")
+        
+        # Add metadata
+        prediction['user_id'] = str(user_id) if user_id else 'Anonymous'
+        
+        return Response(prediction, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error in scan_plant_with_file: {str(e)}")
+        return Response(
+            {'error': f'Failed to process image: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+@api_view(['GET'])
+def get_dashboard_stats(request):
+    try:
+        print("🔍 Dashboard stats endpoint called")
+
+        # 1️⃣ Total users
+        users_response = (
+            supabase
+            .table('users')
+            .select('id', count='exact')
+            .execute()
+        )
+        total_users = users_response.count or 0
+
+        # 2️⃣ Subscribed (premium) users
+        subscribed_response = (
+            supabase
+            .table('profiles')
+            .select('id', count='exact')
+            .eq('is_premium', True)
+            .execute()
+        )
+        subscribed_users = subscribed_response.count or 0
+
+        # 3️⃣ Total plant scans (from scan_history)
+        scans_response = (
+            supabase
+            .table('scan_history')
+            .select('id', count='exact')
+            .execute()
+        )
+        total_scans = scans_response.count or 0
+
+        print(
+            f"✅ Users: {total_users}, "
+            f"Premium: {subscribed_users}, "
+            f"Scans: {total_scans}"
+        )
+
+        return Response({
+            'total_users': total_users,
+            'subscribed_users': subscribed_users,
+            'total_scans': total_scans,
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        print("❌ Error:", e)
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(["GET"])
+def search_plants_mobile(request):
+    """Search plants by name for mobile app (server-side search)"""
+    try:
+        query = request.GET.get("query", "").strip()
+        
+        if not query:
+            return Response({"plants": []}, status=200)
+
+        print(f"🔍 Searching for: {query}")
+
+        # Search in plant_name and scientific_name fields
+        response = (
+            supabase.table("plants")
+            .select("*")
+            .or_(f"plant_name.ilike.%{query}%,scientific_name.ilike.%{query}%")
+            .execute()
+        )
+
+        plants = response.data or []
+        print(f"✅ Found {len(plants)} plants")
+
+        # Fetch related images and ailments for each plant
+        for plant in plants:
+            plant_id = plant["id"]
+            
+            # Fetch images
+            images_resp = (
+                supabase.table("plant_images")
+                .select("image_url")
+                .eq("plant_id", plant_id)
+                .execute()
+            )
+            plant["images"] = [img["image_url"] for img in images_resp.data]
+            plant["image_url"] = plant["images"][0] if plant["images"] else None
+            
+            # Fetch ailments
+            ailments_resp = (
+                supabase.table("plant_ailments")
+                .select("ailment, disease_type")
+                .eq("plant_id", plant_id)
+                .execute()
+            )
+            
+            ailments_data = ailments_resp.data or []
+            plant["ailments"] = [a["ailment"] for a in ailments_data]
+            plant["disease_types"] = list(set([a["disease_type"] for a in ailments_data]))
+
+        return Response({"plants": plants}, status=200)
+
+    except Exception as e:
+        print(f"❌ Error in search_plants_mobile: {e}")
+        traceback.print_exc()
+        return Response({"error": str(e)}, status=500)
+    
+
+
+    
+@api_view(["GET"])
+def search_by_ailment_mobile(request):
+    """Search plants by ailment for mobile app (server-side search)"""
+    try:
+        ailment = request.GET.get("ailment", "").strip()
+        
+        if not ailment:
+            return Response({"plants": []}, status=200)
+
+        print(f"🔍 Searching for ailment: {ailment}")
+
+        # First, find all plant_ids that have this ailment
+        ailments_resp = (
+            supabase.table("plant_ailments")
+            .select("plant_id, ailment, disease_type")
+            .ilike("ailment", f"%{ailment}%")
+            .execute()
+        )
+        
+        ailments_data = ailments_resp.data or []
+        
+        if not ailments_data:
+            print(f"❌ No plants found for ailment: {ailment}")
+            return Response({"plants": []}, status=200)
+        
+        # Get unique plant_ids
+        plant_ids = list(set([a["plant_id"] for a in ailments_data]))
+        print(f"✅ Found {len(plant_ids)} plants with ailment: {ailment}")
+        
+        # Fetch plant details for these plant_ids
+        plants_resp = (
+            supabase.table("plants")
+            .select("*")
+            .in_("id", plant_ids)
+            .execute()
+        )
+        
+        plants = plants_resp.data or []
+        
+        # Fetch related images and all ailments for each plant
+        for plant in plants:
+            plant_id = plant["id"]
+            
+            # Fetch images
+            images_resp = (
+                supabase.table("plant_images")
+                .select("image_url")
+                .eq("plant_id", plant_id)
+                .execute()
+            )
+            plant["images"] = [img["image_url"] for img in images_resp.data]
+            plant["image_url"] = plant["images"][0] if plant["images"] else None
+            
+            # Fetch all ailments for this plant
+            all_ailments_resp = (
+                supabase.table("plant_ailments")
+                .select("ailment, disease_type")
+                .eq("plant_id", plant_id)
+                .execute()
+            )
+            
+            all_ailments_data = all_ailments_resp.data or []
+            plant["ailments"] = [a["ailment"] for a in all_ailments_data]
+            plant["disease_types"] = list(set([a["disease_type"] for a in all_ailments_data]))
+        
+        print(f"✅ Returning {len(plants)} plants for ailment: {ailment}")
+        return Response({"plants": plants}, status=200)
+
+    except Exception as e:
+        print(f"❌ Error in search_by_ailment_mobile: {e}")
+        traceback.print_exc()
+        return Response({"error": str(e)}, status=500)
+# ============================================================================
+# ✅ GET SINGLE PLANT BY ID (for Plant Details page)
+# ============================================================================
+@api_view(["GET"])
+def get_plant_by_id(request, plant_id):
+    try:
+        # Fetch the plant
+        response = (
+            supabase.table("plants")
+            .select("*")
+            .eq("id", plant_id)
+            .single()
+            .execute()
+        )
+        
+        if not response.data:
+            return Response({"error": "Plant not found"}, status=404)
+        
+        plant = response.data
+
+        # Fetch ALL plant images
+        plant_images_resp = (
+            supabase.table("plant_images")
+            .select("image_url")
+            .eq("plant_id", plant_id)
+            .execute()
+        )
+        plant["images"] = [img["image_url"] for img in plant_images_resp.data]
+
+        # Fetch ailments
+        ailments_resp = (
+            supabase.table("plant_ailments")
+            .select("*")
+            .eq("plant_id", plant_id)
+            .execute()
+        )
+        
+        ailments = ailments_resp.data or []
+        
+        # Group ailments by disease_type
+        ailments_by_disease = {}
+        for ailment in ailments:
+            disease_type = ailment.get("disease_type", "Other")
+            if disease_type not in ailments_by_disease:
+                ailments_by_disease[disease_type] = []
+            
+            ailments_by_disease[disease_type].append({
+                "ailment": ailment.get("ailment"),
+                "reference": ailment.get("reference"),
+                "herbalBenefit": ailment.get("herbal_benefit"),
+            })
+        
+        plant["ailments"] = ailments_by_disease
+
+        return Response(plant, status=200)
+
+    except Exception as e:
+        print("❌ Error fetching plant:", traceback.format_exc())
         return Response({"error": str(e)}, status=500)

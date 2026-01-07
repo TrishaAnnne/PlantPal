@@ -15,6 +15,7 @@ import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { RootStackParamList } from "../App";
 import { useAuth } from "../src/contexts/AuthContext";
+import * as SecureStore from 'expo-secure-store';
 
 type ProfileScreenNavigationProp = StackNavigationProp<
   RootStackParamList,
@@ -23,7 +24,7 @@ type ProfileScreenNavigationProp = StackNavigationProp<
 
 export default function Profile() {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { user, signOut } = useAuth(); // user contains { email }
+  const { user, signOut } = useAuth();
 
   const [fontsLoaded] = useFonts({
     Poppins: require("../assets/fonts/Poppins-Regular.ttf"),
@@ -32,58 +33,110 @@ export default function Profile() {
     "Poppins-SemiBold": require("../assets/fonts/Poppins-SemiBold.ttf"),
   });
 
-  // --- State ---
   const [username, setUsername] = useState("Loading...");
   const [email, setEmail] = useState("");
   const [city, setCity] = useState("");
   const [interests, setInterests] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
 
-  // --- Load user info from backend ---
+  // 🔹 Load user profile
   useEffect(() => {
     const loadUser = async () => {
-      try {
-        if (!user?.email) {
-          console.warn("No email found in AuthContext");
-          return;
-        }
-        setEmail(user.email);
+      if (!user?.email) return;
+      setEmail(user.email);
 
-        const res = await fetch(
-          `http://127.0.0.1:8000/api/profile/?email=${encodeURIComponent(
-            user.email
-          )}`
-        );
+      const res = await fetch(
+        `http://127.0.0.1:8000/api/profile/?email=${encodeURIComponent(
+          user.email
+        )}`
+      );
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data.username) setUsername(data.username);
-          if (data.profile) {
-            setCity(data.profile.city || "");
-            setInterests(data.profile.interests || "");
-            setAvatarUrl(data.profile.avatar_url || null); // ✅ avatar
-          }
-        } else {
-          console.warn("Profile API error", await res.text());
+      if (res.ok) {
+        const data = await res.json();
+        setUsername(data.username);
+
+        if (data.profile) {
+          setCity(data.profile.city || "");
+          setInterests(data.profile.interests || "");
+          setAvatarUrl(data.profile.avatar_url || null);
+          setIsPremium(data.profile.is_premium || false);
         }
-      } catch (err) {
-        console.error("Error loading user:", err);
       }
     };
+
     loadUser();
   }, [user]);
 
-  // --- Log out ---
-  const handleLogout = async () => {
-    try {
-      await signOut();
-      Alert.alert("Logged out", "You have been logged out.", [
-        { text: "OK", onPress: () => navigation.replace("Login") },
-      ]);
-    } catch (err) {
-      console.error("Logout error:", err);
+  // 🔹 Subscribe premium
+  const handleGoPremium = async () => {
+  try {
+    if (!email) {
+      Alert.alert("Error", "User email not found");
+      return;
     }
-  };
+
+    console.log("🔔 Go Premium clicked");
+    console.log("📧 Email:", email);
+
+    const response = await fetch(
+      "http://127.0.0.1:8000/api/subscribe_premium/",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      }
+    );
+
+    console.log("📡 Status:", response.status);
+
+    const data = await response.json();
+    console.log("📦 Response:", data);
+
+    if (!response.ok) {
+      Alert.alert("Error", data.error || "Failed to activate premium");
+      return;
+    }
+
+    // ✅ Update UI immediately
+    setIsPremium(true);
+
+    Alert.alert(
+      "🎉 Premium Activated",
+      "You are now a Premium member!"
+    );
+  } catch (error) {
+    console.error("❌ Go Premium error:", error);
+    Alert.alert("Network Error", "Cannot connect to server");
+  }
+};
+
+
+
+  const handleLogout = async () => {
+  try {
+    // Clear saved credentials from Remember Me
+    await SecureStore.deleteItemAsync('savedEmail');
+    await SecureStore.deleteItemAsync('savedPassword');
+    await SecureStore.deleteItemAsync('rememberMe');
+    
+    await signOut();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "Login" }],
+    });
+  } catch (error) {
+    console.log('Error clearing credentials:', error);
+    // Still logout even if clearing fails
+    await signOut();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "Login" }],
+    });
+  }
+};
 
   if (!fontsLoaded) return null;
 
@@ -91,35 +144,25 @@ export default function Profile() {
     <ImageBackground
       source={require("../assets/background.png")}
       style={styles.bg}
-      resizeMode="cover"
     >
       <ScrollView contentContainerStyle={styles.container}>
-        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#2F4F2F" />
-          </TouchableOpacity>
+          <Ionicons
+            name="arrow-back"
+            size={24}
+            onPress={() => navigation.goBack()}
+          />
           <Text style={styles.headerTitle}>Profile</Text>
-          <TouchableOpacity>
-            <Ionicons name="settings-outline" size={24} color="#2F4F2F" />
+         <TouchableOpacity onPress={() => navigation.navigate("Settings")}>
+            <Ionicons name="settings-outline" size={24} />
           </TouchableOpacity>
         </View>
 
-        {/* Card */}
         <View style={styles.card}>
           {avatarUrl ? (
-            <Image
-              source={{ uri: avatarUrl }}
-              style={styles.avatarImage}
-              resizeMode="cover"
-            />
+            <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
           ) : (
-            <Ionicons
-              name="person-circle"
-              size={100}
-              color="#2F4F2F"
-              style={styles.avatarIcon}
-            />
+            <Ionicons name="person-circle" size={100} color="#2F4F2F" />
           )}
 
           <Text style={styles.name}>{username}</Text>
@@ -132,65 +175,61 @@ export default function Profile() {
             <Text style={styles.editText}>Edit profile</Text>
           </TouchableOpacity>
 
-          {/* Info fields */}
-          <View style={styles.infoRow}>
-            <TouchableOpacity style={styles.infoItem}>
-              <Ionicons name="location-outline" size={18} color="#2F4F2F" />
-              <Text style={styles.infoText}>
-                {city ? city : "Add your city"}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.infoItem}>
-              <Ionicons name="heart-outline" size={18} color="#2F4F2F" />
-              <Text style={styles.infoText}>
-                {interests ? interests : "What are you interested in?"}
-              </Text>
-            </TouchableOpacity>
+          <View style={styles.infoItem}>
+            <Ionicons name="location-outline" size={18} />
+            <Text style={styles.infoText}>
+              {city || "Add your city"}
+            </Text>
           </View>
 
-          {/* Go Premium Button */}
-          <TouchableOpacity style={styles.premiumButton}>
-            <ImageBackground
-              source={require("../assets/gold-bg.png")}
-              style={styles.premiumBg}
-              imageStyle={{ borderRadius: 20 }}
-              resizeMode="stretch"
+          <View style={styles.infoItem}>
+            <Ionicons name="heart-outline" size={18} />
+            <Text style={styles.infoText}>
+              {interests || "What are you interested in?"}
+            </Text>
+          </View>
+
+          {/* PREMIUM */}
+          {isPremium ? (
+            <View style={styles.premiumBadge}>
+               <Image 
+                source={require("../assets/premium.png")} 
+                style={styles.crownIcon}
+              />
+              <Text style={styles.premiumActive}>Premium Member</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.premiumButton}
+              onPress={handleGoPremium}
             >
-              <View style={styles.premiumContent}>
-                <Text style={styles.premiumText}>Go Premium</Text>
-                <Image
-                  source={require("../assets/crown.png")}
-                  style={styles.crownIcon}
-                  resizeMode="contain"
-                />
-              </View>
-            </ImageBackground>
-          </TouchableOpacity>
+              <Image 
+                source={require("../assets/premium.png")} 
+                style={styles.crownIcon}
+              />
+              <Text style={styles.premiumText}>Go Premium</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Log out */}
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Log Out</Text>
-        </TouchableOpacity>
+   
       </ScrollView>
     </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  bg: { flex: 1, width: "100%", height: "100%" },
-  container: { flexGrow: 1, alignItems: "center", paddingVertical: 40 },
+  bg: { flex: 1 },
+  container: { alignItems: "center", paddingVertical: 40 },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     width: "90%",
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 20,
   },
   headerTitle: {
-    fontSize: 20,
     fontFamily: "Poppins-SemiBold",
-    color: "#2F4F2F",
+    fontSize: 20,
   },
   card: {
     width: "90%",
@@ -198,71 +237,52 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
   },
-  avatarIcon: { marginBottom: 15 },
-  avatarImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: 15,
-  },
-  name: { fontSize: 18, fontFamily: "Poppins-SemiBold", color: "#1c2c1c" },
-  email: {
-    fontSize: 14,
-    fontFamily: "Poppins",
-    color: "#1c2c1c",
-    marginBottom: 10,
-  },
-  editButton: { alignSelf: "flex-end", marginRight: 10, marginBottom: 10 },
-  editText: {
-    fontFamily: "Poppins-Medium",
-    color: "#1c5e2e",
-    textDecorationLine: "underline",
-  },
-  infoRow: { width: "100%", marginBottom: 20 },
+  avatarImage: { width: 100, height: 100, borderRadius: 50 },
+  name: { fontFamily: "Poppins-SemiBold", fontSize: 18 },
+  email: { fontFamily: "Poppins", fontSize: 14 },
+  editButton: { alignSelf: "flex-end" },
+  editText: { textDecorationLine: "underline",  color: "#719862ff", fontFamily: "Poppins-Regular", marginBottom: 4 },
   infoItem: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#e1e9d7",
+    padding: 10,
     borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 10,
+    width: "100%",
+    marginVertical: 5,
   },
-  infoText: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontFamily: "Poppins",
-    color: "#2F4F2F",
-  },
-  premiumButton: { borderRadius: 20, overflow: "hidden", marginTop: 10 },
-  premiumBg: { paddingVertical: 10, paddingHorizontal: 30 },
-  premiumContent: {
+  infoText: { marginLeft: 8 },
+  premiumButton: { 
+    marginTop: 10,
+    backgroundColor: "#FFA500",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    padding: 10,
+    borderRadius: 20,
+    width: "55%",
   },
-  premiumText: {
+  premiumText: { 
     fontFamily: "Poppins-SemiBold",
     color: "#000",
-    fontSize: 16,
+  },
+  crownIcon: { 
+    width: 20, 
+    height: 20,
     marginRight: 8,
   },
-  crownIcon: { width: 20, height: 20 },
-  logoutButton: {
-    marginTop: 30,
-    backgroundColor: "#9bb892",
+  premiumBadge: {
+     marginTop: 10,
+    backgroundColor: "#FFA500",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 10,
     borderRadius: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 40,
+    width: "70%",
   },
-  logoutText: {
-    fontFamily: "Poppins-Medium",
-    color: "#fff",
-    fontSize: 16,
-  },
+  premiumActive: {   fontFamily: "Poppins-SemiBold",
+    color: "#000",marginLeft: 6 },
+  
 });

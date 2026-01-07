@@ -84,50 +84,53 @@ const EditProfile: React.FC = () => {
 
   // 📸 Photo picker
   const handleChoosePhoto = async (): Promise<void> => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 1,
-    });
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ correct for your version
+    allowsEditing: true,
+    quality: 1,
+  });
 
-    if (!result.canceled && result.assets.length > 0) {
-      setProfilePic(result.assets[0].uri);
-    }
-  };
+  if (!result.canceled && result.assets.length > 0) {
+    setProfilePic(result.assets[0].uri);
+  }
+};
+
 
   // 💾 Save profile
 const handleSave = async (): Promise<void> => {
   try {
+    const payload = {
+      email: email,
+      updates: {
+        user_name: username,   // 👈 backend expects user_name
+        city: city,
+        interests: interest,
+        avatar_url: profilePic, // ⚠️ still just a URI (see note below)
+      },
+    };
+
+    console.log("Saving profile payload:", payload);
+
     const response = await fetch("http://127.0.0.1:8000/api/update_profile/", {
-      method: "PUT", // <-- must match the view
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email, // who is being updated
-        updates: {
-          user_name: username,
-          city,
-          interests: interest,   // <-- key name should match your DB column
-          avatar_url: profilePic
-        }
-      }),
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Failed to save profile: ${errText}`);
+      throw new Error(errText);
     }
 
-    const data = await response.json();
-
-    // Keep alert and also log to console
     Alert.alert("Success", "Profile updated!");
-    console.log("Profile updated successfully!", data);
-
     navigation.goBack();
   } catch (err: any) {
     Alert.alert("Error", err.message);
   }
 };
+
 
   return (
     <ImageBackground

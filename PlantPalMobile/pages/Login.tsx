@@ -1,5 +1,5 @@
 // Login.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   View,
@@ -21,11 +21,11 @@ import { StackNavigationProp } from "@react-navigation/stack";
 import { RootStackParamList } from "../App";
 import { useAuth } from "../src/contexts/AuthContext";
 import GoogleLogin from "../src/components/GoogleLogin";
+import * as SecureStore from 'expo-secure-store';
 
-// Determine backend base URL dynamically
 const BASE_URL =
   Platform.OS === "android"
-    ? "http://10.0.2.2:8000"
+    ? "http://127.0.0.1:8000"
     : "http://localhost:8000";
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, "Login">;
@@ -40,10 +40,30 @@ export default function Login() {
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Modal state
   const [termsVisible, setTermsVisible] = useState(false);
   const [termsLoading, setTermsLoading] = useState(false);
   const [termsContent, setTermsContent] = useState("");
+
+  // Load saved credentials on mount
+  useEffect(() => {
+    loadSavedCredentials();
+  }, []);
+
+  const loadSavedCredentials = async () => {
+    try {
+      const savedEmail = await SecureStore.getItemAsync('savedEmail');
+      const savedPassword = await SecureStore.getItemAsync('savedPassword');
+      const savedRemember = await SecureStore.getItemAsync('rememberMe');
+      
+      if (savedRemember === 'true' && savedEmail && savedPassword) {
+        setEmail(savedEmail);
+        setPassword(savedPassword);
+        setRemember(true);
+      }
+    } catch (error) {
+      console.log('Error loading credentials:', error);
+    }
+  };
 
   const [fontsLoaded] = useFonts({
     Poppins: require("../assets/fonts/Poppins-Regular.ttf"),
@@ -55,7 +75,6 @@ export default function Login() {
 
   if (!fontsLoaded) return null;
 
-  // Fetch latest terms
   const openTermsModal = async () => {
     setTermsVisible(true);
     setTermsLoading(true);
@@ -72,7 +91,6 @@ export default function Login() {
     }
   };
 
-  // Handle login
   const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert("Missing fields", "Please enter both email and password.");
@@ -94,7 +112,30 @@ export default function Login() {
         return;
       }
 
-      await setUser({ email: result.user.email }, result.access, result.refresh);
+      await setUser(
+        { email: result.user.email }, 
+        result.tokens.access,
+        result.tokens.refresh
+      );
+      
+      // Save or clear credentials based on Remember Me
+      if (remember) {
+        await SecureStore.setItemAsync('savedEmail', email);
+        await SecureStore.setItemAsync('savedPassword', password);
+        await SecureStore.setItemAsync('rememberMe', 'true');
+      } else {
+        await SecureStore.deleteItemAsync('savedEmail');
+        await SecureStore.deleteItemAsync('savedPassword');
+        await SecureStore.deleteItemAsync('rememberMe');
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      Alert.alert("Success", "Login successful!");
+      
+      // ✅ Navigate to Main (Tab Navigator)
+      navigation.navigate("Main");
+      
     } catch (err) {
       console.log(err);
       Alert.alert("Error", "Could not connect to the server.");
@@ -116,31 +157,33 @@ export default function Login() {
           wellness{"\n"}journey.
         </Text>
 
-        {/* Email */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
             placeholder="Email"
-            placeholderTextColor="#5c7255ff"
+            placeholderTextColor="#999"
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
+            autoComplete="email"
+            importantForAutofill="no"
           />
           <View style={styles.iconCircle}>
             <Ionicons name="mail-outline" size={20} color="#5c7255ff" />
           </View>
         </View>
 
-        {/* Password */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
             placeholder="Password"
-            placeholderTextColor="#5c7255ff"
+            placeholderTextColor="#999"
             secureTextEntry={secureText}
             value={password}
             onChangeText={setPassword}
+            autoComplete="password"
+            importantForAutofill="no"
           />
           <TouchableOpacity onPress={() => setSecureText(!secureText)}>
             <View style={styles.iconCircle}>
@@ -153,19 +196,18 @@ export default function Login() {
           </TouchableOpacity>
         </View>
 
-        {/* Remember Me / Forgot */}
         <View style={styles.row}>
           <View style={styles.rememberContainer}>
             <Checkbox
               value={remember}
               onValueChange={setRemember}
-              color={remember ? "#4A7C59" : undefined} // Use undefined instead of white
+              color={remember ? "#4A7C59" : undefined}
               style={{
-              width: 15,
-              height: 15,
-              borderWidth: 1, // ensures border visible
-              borderColor: "black",
-              borderRadius: 4,
+                width: 15,
+                height: 15,
+                borderWidth: 1,
+                borderColor: "black",
+                borderRadius: 4,
               }}
             />
             <Text style={styles.remember}>Remember Me</Text>
@@ -175,7 +217,6 @@ export default function Login() {
           </TouchableOpacity>
         </View>
 
-        {/* Login button */}
         <TouchableOpacity
           style={styles.loginButton}
           onPress={handleLogin}
@@ -206,7 +247,6 @@ export default function Login() {
         </TouchableOpacity>
       </View>
 
-      {/* TERMS MODAL */}
       <Modal visible={termsVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
@@ -239,7 +279,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.9)",
   },
   iconCircle: {
     width: 35,

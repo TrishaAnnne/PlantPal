@@ -222,7 +222,7 @@ export default function AdminLayout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col bg-white/20 backdrop-blur-sm overflow-y-auto">
+      <main className="flex-1 flex flex-col overflow-y-auto">
         <header className="flex justify-between items-center px-10 py-5 bg-[#E7EED9] shadow-sm">
           <h2 className="text-3xl font-bold text-[#2F4F2F] tracking-wider">
             {getPageTitle()}

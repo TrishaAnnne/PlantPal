@@ -10,24 +10,26 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import SplashScreen from "./pages/SplashScreen";
 import LoginPage from "./pages/Login";
-import ScanPage from "./pages/ScanPage";
 import SignUp from "./pages/SignUp";
+import MainTab from "./pages/MainTab";
 import Profile from "./pages/Profile";
 import EditProfile from "./pages/EditProfile";
-import SearchPage from "./pages/SearchPage";
-import JournalPage from "./pages/JournalPage";
+import Settings from "./pages/Settings";
+import PlantDetails from "./pages/PlantDetails";
 
 import { AuthProvider, useAuth } from "./src/contexts/AuthContext";
 
 // Navigation type definition
 export type RootStackParamList = {
   Login: undefined;
-  Scan: undefined;
   SignUp: undefined;
+  Main: undefined;
   Profile: undefined;
   EditProfile: undefined;
-  Search: undefined;
-  Journal: undefined;
+  Settings: undefined;
+  PlantDetails: {
+    plantId: string;
+  };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -57,18 +59,48 @@ function AppNavigator() {
     >
       {user ? (
         <>
-          <Stack.Screen name="Scan" component={ScanPage} />
-          <Stack.Screen name="Profile" component={Profile} />
-          <Stack.Screen name="EditProfile" component={EditProfile} />
-          <Stack.Screen name="Journal" component={JournalPage} />
+          {/* Main Tab Navigator (Search, Scan, Journal) */}
+          <Stack.Screen name="Main" component={MainTab} />
+
+          {/* Plant Details (opened from Search results) */}
           <Stack.Screen
-            name="Search"
-            component={SearchPage}
-            options={{ animation: "slide_from_right" }}
+            name="PlantDetails"
+            component={PlantDetails}
+            options={{
+              animation: "slide_from_right",
+              gestureEnabled: true,
+            }}
+          />
+
+          {/* Profile screens */}
+          <Stack.Screen
+            name="Profile"
+            component={Profile}
+            options={{
+              animation: "slide_from_right",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="EditProfile"
+            component={EditProfile}
+            options={{
+              animation: "slide_from_right",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="Settings"
+            component={Settings}
+            options={{
+              animation: "slide_from_right",
+              gestureEnabled: true,
+            }}
           />
         </>
       ) : (
         <>
+          {/* Auth screens */}
           <Stack.Screen name="Login" component={LoginPage} />
           <Stack.Screen name="SignUp" component={SignUp} />
         </>
