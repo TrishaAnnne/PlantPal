@@ -30,6 +30,10 @@ urlpatterns = [
     #User Managemen Admin  
     path("get_users/", views.get_users, name="get_users"),
     path("delete_user/<str:user_id>/", views.delete_user, name="delete_user"),
+
+    #Journal Notes Endpoints
+    path("notes/", views.notes_list_create, name="notes_list_create"),  
+    path("notes/<uuid:note_id>/", views.note_detail, name="note_detail"),
     
     
 

@@ -1250,3 +1250,97 @@ def get_latest_terms_conditions(request):
     except Exception as e:
         print(traceback.format_exc())
         return Response({"error": str(e)}, status=500)
+    
+    # ====================================================================
+# ✅ JOURNAL NOTES CRUD
+# ====================================================================
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def notes_list_create(request):
+    """
+    GET: Fetch all notes for the logged-in user
+    POST: Create a new note
+    """
+    try:
+        user_id = request.user.id if hasattr(request.user, "id") else None
+        if not user_id:
+            return Response({"error": "User ID not found in token"}, status=401)
+
+        if request.method == "GET":
+            response = (
+                supabase.table("notes")
+                .select("*")
+                .eq("user_id", str(user_id))
+                .order("created_at", desc=True)
+                .execute()
+            )
+            notes = response.data or []
+            return Response(notes, status=200)
+
+        elif request.method == "POST":
+            data = request.data
+            title = data.get("title", "")
+            content = data.get("content", "")
+
+            if not title:
+                return Response({"error": "Title is required"}, status=400)
+
+            note = supabase.table("notes").insert({
+                "id": str(uuid.uuid4()),
+                "user_id": str(user_id),
+                "title": title,
+                "content": content,
+                "created_at": datetime.utcnow().isoformat()
+            }).execute()
+
+            return Response({"message": "Note created", "note": note.data[0]}, status=201)
+
+    except Exception as e:
+        print("⚠️ Error in notes_list_create:", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
+
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def note_detail(request, note_id):
+    """
+    GET: Retrieve single note
+    PUT/PATCH: Update note
+    DELETE: Delete note
+    """
+    try:
+        user_id = request.user.id if hasattr(request.user, "id") else None
+        if not user_id:
+            return Response({"error": "User ID not found in token"}, status=401)
+
+        # Fetch note
+        response = supabase.table("notes").select("*").eq("id", str(note_id)).single().execute()
+        note = response.data
+        if not note:
+            return Response({"error": "Note not found"}, status=404)
+
+        # Ensure ownership
+        if note["user_id"] != str(user_id):
+            return Response({"error": "Unauthorized"}, status=403)
+
+        if request.method == "GET":
+            return Response(note, status=200)
+
+        elif request.method in ["PUT", "PATCH"]:
+            updates = {}
+            if "title" in request.data:
+                updates["title"] = request.data.get("title")
+            if "content" in request.data:
+                updates["content"] = request.data.get("content")
+            updates["updated_at"] = datetime.utcnow().isoformat()
+
+            supabase.table("notes").update(updates).eq("id", str(note_id)).execute()
+            return Response({"message": "Note updated", "updates": updates}, status=200)
+
+        elif request.method == "DELETE":
+            supabase.table("notes").delete().eq("id", str(note_id)).execute()
+            return Response({"message": "Note deleted"}, status=200)
+
+    except Exception as e:
+        print("⚠️ Error in note_detail:", traceback.format_exc())
+        return Response({"error": str(e)}, status=500)
