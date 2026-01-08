@@ -764,62 +764,71 @@ export default function PlantDatabase() {
         </div>
       )}
 
+     
       {/* Plant Cards */}
-      <div className="px-10 pb-10 grid gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {filteredPlants.length > 0 ? (
-          filteredPlants.map((plant) => (
-            <div
-              key={plant.id}
-              className="bg-white rounded-2xl shadow-md hover:shadow-xl transition-shadow border border-[#E1E8DD] overflow-hidden"
-            >
-              <div className="h-40 w-full">
-                <img
-                  src={plant.displayImage || "https://via.placeholder.com/150"}
-                  alt={plant.plant_name}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-
-              <div className="text-center py-3 px-2">
-                <h2 className="text-sm font-semibold">{plant.plant_name}</h2>
-                <p className="text-gray-600 text-xs italic">
-                  {plant.scientific_name || "No scientific name available"}
-                </p>
-              </div>
-              <div className="flex justify-center gap-3 pb-4">
-                <button
-                  onClick={() => handleEdit(plant)}
-                  className="bg-[#E7EED9] hover:bg-[#DCE7D3] text-[#2F4F2F] p-2 rounded-md transition shadow-sm"
-                >
-                  <Edit size={18} />
-                </button>
-                <button
-                  onClick={() => {
-                    setPlantToDelete(plant)
-                    setShowDeleteModal(true)
-                  }}
-                  className="bg-[#F7E2E0] hover:bg-[#F5D0CC] text-[#2F4F2F] p-2 rounded-md transition shadow-sm"
-                >
-                  <Trash2 size={18} />
-                </button>
-                <button
-                  onClick={() => handleView(plant)}
-                  className="bg-[#E7EED9] hover:bg-[#DCE7D3] text-[#2F4F2F] p-2 rounded-md transition shadow-sm"
-                >
-                  <Eye size={18} />
-                </button>
-              </div>
+    <div className="px-10 pb-10 grid gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      {filteredPlants.length > 0 ? (
+        filteredPlants.map((plant, index) => (
+          <div
+            key={plant.id}
+            className={`rounded-2xl shadow-md hover:shadow-xl transition-shadow border border-[#E1E8DD] overflow-hidden
+              ${index % 2 === 0 ? "bg-yellow-200" : "bg-violet-300"}
+            `}
+          >
+            <div className="h-40 w-full">
+              <img
+                src={plant.displayImage || "https://via.placeholder.com/150"}
+                alt={plant.plant_name}
+                className="w-full h-full object-cover"
+              />
             </div>
-          ))
-        ) : (
-          <div className="col-span-full text-center py-16">
-            <Leaf size={48} className="mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500 text-lg">
-              {searchQuery ? `No plants found matching "${searchQuery}"` : "No plants available"}
-            </p>
+
+            <div className="text-center py-3 px-2">
+              <h2 className="text-sm font-semibold">{plant.plant_name}</h2>
+              <p className="text-gray-600 text-xs italic">
+                {plant.scientific_name || "No scientific name available"}
+              </p>
+            </div>
+
+            <div className="flex justify-center gap-3 pb-4">
+              <button
+                onClick={() => handleEdit(plant)}
+                className="bg-[#E7EED9] hover:bg-[#DCE7D3] text-[#2F4F2F] p-2 rounded-md transition shadow-sm"
+              >
+                <Edit size={18} />
+              </button>
+
+              <button
+                onClick={() => {
+                  setPlantToDelete(plant)
+                  setShowDeleteModal(true)
+                }}
+                className="bg-[#F7E2E0] hover:bg-[#F5D0CC] text-[#2F4F2F] p-2 rounded-md transition shadow-sm"
+              >
+                <Trash2 size={18} />
+              </button>
+
+              <button
+                onClick={() => handleView(plant)}
+                className="bg-[#E7EED9] hover:bg-[#DCE7D3] text-[#2F4F2F] p-2 rounded-md transition shadow-sm"
+              >
+                <Eye size={18} />
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+    ))
+  ) : (
+    <div className="col-span-full text-center py-16">
+      <Leaf size={48} className="mx-auto text-gray-300 mb-3" />
+      <p className="text-gray-500 text-lg">
+        {searchQuery
+          ? `No plants found matching "${searchQuery}"`
+          : "No plants available"}
+      </p>
+    </div>
+  )}
+</div>
+
 
       {/* Add/Edit Plant Modal */}
       {showModal && (
