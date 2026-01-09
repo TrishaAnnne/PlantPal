@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -11,15 +11,30 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useFonts } from "expo-font";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function JournalPage() {
   const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState<"plants" | "notes">("plants");
+  const [bookmarkedPlants, setBookmarkedPlants] = useState<any[]>([]);
 
   const [fontsLoaded] = useFonts({
     Poppins: require("../assets/fonts/Poppins-Regular.ttf"),
     "Poppins-SemiBold": require("../assets/fonts/Poppins-SemiBold.ttf"),
   });
+
+  // ✅ Load bookmarks when page mounts
+  useEffect(() => {
+    const loadBookmarks = async () => {
+      try {
+        const saved = await AsyncStorage.getItem("bookmarkedPlants");
+        if (saved) setBookmarkedPlants(JSON.parse(saved));
+      } catch (err) {
+        console.error("Error loading bookmarks:", err);
+      }
+    };
+    loadBookmarks();
+  }, []);
 
   if (!fontsLoaded) return null;
 
@@ -42,10 +57,7 @@ export default function JournalPage() {
         {/* Tabs */}
         <View style={styles.tabs}>
           <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === "plants" && styles.activeTab,
-            ]}
+            style={[styles.tab, activeTab === "plants" && styles.activeTab]}
             onPress={() => setActiveTab("plants")}
           >
             <Text
@@ -59,10 +71,7 @@ export default function JournalPage() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.tab,
-              activeTab === "notes" && styles.activeTab,
-            ]}
+            style={[styles.tab, activeTab === "notes" && styles.activeTab]}
             onPress={() => setActiveTab("notes")}
           >
             <Text
@@ -79,18 +88,19 @@ export default function JournalPage() {
         {/* Content */}
         {activeTab === "plants" ? (
           <View style={styles.cardContainer}>
-            <JournalCard
-              image={require("../assets/asthma.jpg")}
-              title="Asthma Plant"
-            />
-            <JournalCard
-              image={require("../assets/bittergourd.jpg")}
-              title="Bitter Gourd"
-            />
-            <JournalCard
-              image={require("../assets/chaste.jpg")}
-              title="Five-Leaved Chaste Tree"
-            />
+            {bookmarkedPlants.length > 0 ? (
+              bookmarkedPlants.map((plant, index) => (
+                <JournalCard
+                  key={index}
+                  image={plant.image ? { uri: plant.image } : require("../assets/default-plant.png")}
+                  title={plant.plant_name}
+                />
+              ))
+            ) : (
+              <Text style={styles.emptyText}>
+                No plants bookmarked yet. Search and bookmark your favorite plants 🌿
+              </Text>
+            )}
           </View>
         ) : (
           <View style={styles.notesBox}>
@@ -118,10 +128,7 @@ function JournalCard({ image, title }: any) {
 
 const styles = StyleSheet.create({
   bg: { flex: 1 },
-  container: {
-    paddingVertical: 40,
-    alignItems: "center",
-  },
+  container: { paddingVertical: 40, alignItems: "center" },
 
   header: {
     width: "90%",
@@ -130,17 +137,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 15,
   },
-  headerTitle: {
-    fontFamily: "Poppins-SemiBold",
-    fontSize: 20,
-    color: "#2F4F2F",
-  },
+  headerTitle: { fontFamily: "Poppins-SemiBold", fontSize: 20, color: "#2F4F2F" },
 
-  tabs: {
-    flexDirection: "row",
-    width: "90%",
-    marginBottom: 20,
-  },
+  tabs: { flexDirection: "row", width: "90%", marginBottom: 20 },
   tab: {
     flex: 1,
     paddingVertical: 8,
@@ -148,56 +147,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
-  activeTab: {
-    borderBottomColor: "#4f7f52",
-  },
-  tabText: {
-    fontFamily: "Poppins",
-    color: "#6b8e6b",
-  },
-  activeTabText: {
-    color: "#4f7f52",
-    fontFamily: "Poppins-SemiBold",
-  },
+  activeTab: { borderBottomColor: "#4f7f52" },
+  tabText: { fontFamily: "Poppins", color: "#6b8e6b" },
+  activeTabText: { color: "#4f7f52", fontFamily: "Poppins-SemiBold" },
 
-  cardContainer: {
-    width: "90%",
-  },
+  cardContainer: { width: "90%" },
 
-  card: {
-    height: 140,
-    borderRadius: 18,
-    overflow: "hidden",
-    marginBottom: 15,
-  },
-  cardImage: {
-    width: "100%",
-    height: "100%",
-  },
-  overlay: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-    backgroundColor: "rgba(0,0,0,0.35)",
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-  },
-  cardTitle: {
-    color: "#fff",
-    fontFamily: "Poppins-SemiBold",
-    fontSize: 16,
-  },
+  card: { height: 140, borderRadius: 18, overflow: "hidden", marginBottom: 15 },
+  cardImage: { width: "100%", height: "100%" },
+  overlay: { position: "absolute", bottom: 0, width: "100%", backgroundColor: "rgba(0,0,0,0.35)", paddingVertical: 10, paddingHorizontal: 15 },
+  cardTitle: { color: "#fff", fontFamily: "Poppins-SemiBold", fontSize: 16 },
 
-  notesBox: {
-    width: "90%",
-    backgroundColor: "rgba(255,255,255,0.7)",
-    borderRadius: 18,
-    padding: 20,
-    alignItems: "center",
-  },
-  emptyText: {
-    fontFamily: "Poppins",
-    color: "#2F4F2F",
-    textAlign: "center",
-  },
+  notesBox: { width: "90%", backgroundColor: "rgba(255,255,255,0.7)", borderRadius: 18, padding: 20, alignItems: "center" },
+  emptyText: { fontFamily: "Poppins", color: "#2F4F2F", textAlign: "center" },
 });

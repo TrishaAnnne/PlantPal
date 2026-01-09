@@ -137,6 +137,14 @@ export default function SearchPage() {
           ) : results.length > 0 ? (
             results.map((plant, index) => (
               <View key={index} style={styles.resultCard}>
+        
+        <TouchableOpacity
+          style={{ position: "absolute", top: 10, right: 10 }}
+          onPress={() => handleBookmark(plant)}
+        >
+          <Ionicons name="bookmark-outline" size={24} color="#2F4F2F" />
+        </TouchableOpacity>
+
         <Ionicons name="leaf-outline" size={40} color="#2F4F2F" />
 
         <Text style={styles.plantName}>{plant.plant_name}</Text>
@@ -169,7 +177,22 @@ export default function SearchPage() {
     </ImageBackground>
   );
 }
+const handleBookmark = async (plant: any) => {
+    try {
+      const saved = await AsyncStorage.getItem("bookmarkedPlants");
+      let bookmarks = saved ? JSON.parse(saved) : [];
 
+      if (!bookmarks.some((p: any) => p.id === plant.id)) {
+        bookmarks.push(plant);
+        await AsyncStorage.setItem("bookmarkedPlants", JSON.stringify(bookmarks));
+        alert(`${plant.plant_name} added to your bookmarks!`);
+      } else {
+        alert(`${plant.plant_name} is already bookmarked.`);
+      }
+    } catch (err) {
+      console.error("Error bookmarking plant:", err);
+    }
+  };
 const styles = StyleSheet.create({
   bg: { flex: 1, width: "100%", height: "100%" },
   container: { flexGrow: 1, alignItems: "center", paddingVertical: 40 },
